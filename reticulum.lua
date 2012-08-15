@@ -118,6 +118,11 @@ approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 
+approxSpace:init_levels()
+approxSpace:print_layout_statistic()
+approxSpace:print_statistic()
+--OrderCuthillMcKee(approxSpace, true);
+
 -------------------------------------------
 --  Setup User Functions
 -------------------------------------------
@@ -324,10 +329,12 @@ bicgstabSolver:set_convergence_check(convCheck)
 -------------------------------------------
 
 -- convergence check
-newtonConvCheck = StandardConvergenceCheck()
+newtonConvCheck = IndivFctConvergenceCheck3d()
+newtonConvCheck:set_approxSpace(approxSpace)
+newtonConvCheck:set_functions("ip3")
 newtonConvCheck:set_maximum_steps(20)
-newtonConvCheck:set_minimum_defect(1e-21)
-newtonConvCheck:set_reduction(1e-8)
+newtonConvCheck:set_minimum_defect("1e-18", 1e-21)
+newtonConvCheck:set_reduction("1e-02", 1e-08)
 newtonConvCheck:set_verbose(true)
 
 newtonLineSearch = StandardLineSearch()
