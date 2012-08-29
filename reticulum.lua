@@ -264,7 +264,7 @@ exactSolver = LU()
 -----------------
 
 	-- Base Solver
-	baseConvCheck = StandardConvergenceCheck()
+	baseConvCheck = ConvCheck()
 	baseConvCheck:set_maximum_steps(10000)
 	baseConvCheck:set_minimum_defect(1e-28)
 	baseConvCheck:set_reduction(1e-2)
@@ -301,7 +301,7 @@ exactSolver = LU()
 --]]
 
 -- create Convergence Check
-convCheck = StandardConvergenceCheck()
+convCheck = ConvCheck()
 convCheck:set_maximum_steps(50)
 convCheck:set_minimum_defect(1e-21)
 convCheck:set_reduction(1e-4)
@@ -329,7 +329,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -------------------------------------------
 
 -- convergence check
-newtonConvCheck = CompositeConvergenceCheck3dCPU1(approxSpace)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace)
 newtonConvCheck:set_functions("ip3")
 newtonConvCheck:set_maximum_steps(20)
 newtonConvCheck:set_minimum_defect("1e-18", 1e-21)
