@@ -8,6 +8,7 @@
 
 ug_load_script("ug_util.lua")
 ug_load_script("solver_util/setup_famg.lua")
+ug_load_script("solver_util/setup_rsamg.lua")
 
 -- Dimension
 dim = 3
@@ -27,7 +28,7 @@ numPreRefs = util.GetParamNumber("-numPreRefs", 0)
 numRefs    = util.GetParamNumber("-numRefs",    0)
 
 -- choose number of time steps
-NumTimeSteps =  util.GetParamNumber("-numTimeSteps", 1)
+NumTimeSteps =  util.GetParamNumber("-numTimeSteps", 5)
 
 --------------------------------
 -- User Data Functions (begin)
@@ -260,8 +261,8 @@ ilut = ILUT()
 -- exact Solver
 exactSolver = LU()
 
-amg = SetupRSAMGSolver() 
--- amg:set_one_init(true)
+amg = util.SetupRSAMGPreconditioner() 
+amg:set_one_init(true)
 
 
 
@@ -359,13 +360,13 @@ newtonSolver:init(op)
 -- get grid function
 u = GridFunction(approxSpace)
 
---if bWriteMat then
+if bWriteMat then
 	matrixWritePath=os.getenv("HOME").."/matrices/"
 	vectorWriter = GridFunctionPositionProvider()
 	vectorWriter:set_reference_grid_function(u)
 	amg:set_position_provider(vectorWriter)
 	amg:set_matrix_write_path(matrixWritePath)
---end	
+end	
 
 -- set initial value
 Interpolate(CaCytStartValue, u, "ca_cyt", 0.0)
