@@ -1,10 +1,10 @@
-----------------------------------------------------------
---
---   Example - Script to test simulation on 3d reconstructed neuron
---
---   Author: Markus Breit
---
-----------------------------------------------------------
+--[[
+--! \file reticulum_amg.lua
+--! Example - Script to test simulation on 3d reconstructed neuron
+--!
+--! \author Markus Breit
+--!
+]]--
 
 ug_load_script("ug_util.lua")
 ug_load_script("solver_util/setup_famg.lua")
@@ -437,4 +437,4 @@ for step = 1, NumTimeSteps do
 end
 
 -- end timeseries, produce gathering file
---out:write_time_pvd(filename, u)
+-- out:write_time_pvd(filename, u)
