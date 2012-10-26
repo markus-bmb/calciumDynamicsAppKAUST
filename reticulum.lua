@@ -40,13 +40,19 @@ function CaERStart(x, y, z, t)
 end
 
 function IP3Start(x, y, z, t)
-    return 1.0e-6
+    return 4.0e-8 --1.0e-6
 end
 
-function ourDiffTensorCA(x, y, z, t)
+function ourDiffTensorCAcyt(x, y, z, t)
     return	40, 0, 0,
             0, 40, 0,
             0, 0, 40
+end
+
+function ourDiffTensorCAer(x, y, z, t)
+    return	220, 0, 0,
+            0, 220, 0,
+            0, 0, 220
 end
 
 function ourDiffTensorIP3(x, y, z, t)
@@ -64,24 +70,27 @@ end
 syns = {}
 for i=6,15 do
 	syns["start"..i] = 0.005*(i-6)
-	syns["end"..i] = 0.005*(i-6)+1
+	syns["end"..i] = 0.005*(i-6)+0.01
 end
 
 function ourNeumannBndCA(x, y, z, t, si)
 	-- burst for active synapses
 	if 	(si>=6 and si<=15 and syns["start"..si]<=t and t<syns["end"..si])
-	then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
+	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
+	then efflux = -5e-4
 	else efflux = 0.0
 	end
+	--]]
 	
     return true, efflux
 end
 
-ip3EntryDelay = 0.05
+ip3EntryDelay = 0.005
+ip3EntryDuration = 1.0
 function ourNeumannBndIP3(x, y, z, t, si)
 	-- burst for active synapses
-	if 	(si>=6 and si<=15 and syns["start"..si]+ip3EntryDelay<=t and t<syns["end"..si]+ip3EntryDelay)
-	then efflux = -0.0001
+	if 	(si>=6 and si<=15 and syns["start"..si]+ip3EntryDelay<=t and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
+	then efflux = -2.1e-5
 	else efflux = 0.0
 	end
 	
@@ -118,10 +127,11 @@ approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 
+--OrderLex(approxSpace, "lr")
+--OrderCuthillMcKee(approxSpace, true);
 approxSpace:init_levels()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
---OrderCuthillMcKee(approxSpace, true);
 
 -------------------------------------------
 --  Setup User Functions
@@ -134,7 +144,8 @@ print ("Setting up Assembling")
     IP3StartValue = LuaUserNumber3d("IP3Start")
 
 -- Diffusion Tensor setup
-	diffusionMatrixCA = LuaUserMatrix3d("ourDiffTensorCA")
+	diffusionMatrixCAcyt = LuaUserMatrix3d("ourDiffTensorCAcyt")
+	diffusionMatrixCAer = LuaUserMatrix3d("ourDiffTensorCAer")
 	diffusionMatrixIP3 = LuaUserMatrix3d("ourDiffTensorIP3")
 
 -- rhs setup
@@ -169,13 +180,13 @@ end
 
 elemDiscER = ConvectionDiffusion("ca_er", "er") 
 elemDiscER:set_disc_scheme("fv1")
-elemDiscER:set_diffusion(diffusionMatrixCA)
+elemDiscER:set_diffusion(diffusionMatrixCAer)
 elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
 elemDiscCYT = ConvectionDiffusion("ca_cyt", "cyt, nuc")
 elemDiscCYT:set_disc_scheme("fv1")
-elemDiscCYT:set_diffusion(diffusionMatrixCA)
+elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
@@ -286,25 +297,12 @@ exactSolver = LU()
 	gmg:set_num_presmooth(3)
 	gmg:set_num_postsmooth(3)
 
---[[
--- create AMG ---
------------------
-
-	amg = RSAMGPreconditioner()
-	amg:set_nu1(2)
-	amg:set_nu2(2)
-	amg:set_gamma(1)
-	amg:set_presmoother(gs)
-	amg:set_postsmoother(gs)
-	amg:set_base_solver(base)
-	--amg:set_debug(u)
---]]
 
 -- create Convergence Check
 convCheck = ConvCheck()
 convCheck:set_maximum_steps(50)
 convCheck:set_minimum_defect(1e-21)
-convCheck:set_reduction(1e-4)
+convCheck:set_reduction(1e-8)
 convCheck:set_verbose(true)
 
 --[[
@@ -312,11 +310,6 @@ convCheck:set_verbose(true)
 linSolver = LinearSolver()
 linSolver:set_preconditioner(gmg)
 linSolver:set_convergence_check(convCheck)
-
--- create CG Solver
-cgSolver = CG()
-cgSolver:set_preconditioner(jac)
-cgSolver:set_convergence_check(convCheck)
 --]]
 
 -- create BiCGStab Solver
@@ -329,6 +322,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -------------------------------------------
 
 -- convergence check
+---[[
 newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace)
 newtonConvCheck:set_functions("ip3")
 newtonConvCheck:set_maximum_steps(20)
@@ -336,7 +330,14 @@ newtonConvCheck:set_minimum_defect("1e-18", 1e-21)
 newtonConvCheck:set_reduction("1e-02", 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:timeMeasurement(true)
-
+--]]
+--[[
+newtonConvCheck = ConvCheck()
+newtonConvCheck:set_maximum_steps(20)
+newtonConvCheck:set_minimum_defect(1e-21)
+newtonConvCheck:set_reduction(1e-08)
+newtonConvCheck:set_verbose(true)
+--]]
 newtonLineSearch = StandardLineSearch()
 
 -- create Newton Solver
@@ -360,7 +361,7 @@ Interpolate(CaERStartValue, u, "ca_er", 0.0)
 Interpolate(IP3StartValue, u, "ip3", 0.0)
 
 -- timestep in seconds
-dt = 0.001
+dt = 0.000001
 time = 0.0
 step = 0
 
