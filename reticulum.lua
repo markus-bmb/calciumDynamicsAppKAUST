@@ -17,7 +17,7 @@ InitUG(dim, AlgebraType("CPU", 1));
 -- Grid
 --gridName = "rc19_amp.ugx"
 --gridName = "RC19amp_ug4_finished.ugx"
-gridName = "simple_reticulum_3d_new1.ugx"
+gridName = "simple_reticulum_3d.ugx"
 
 -- Refinements before distributing grid
 numPreRefs = util.GetParamNumber("-numPreRefs", 0)
