@@ -125,25 +125,25 @@ for i=6,13 do
 	syns["end"..i] = 0.005*(i-6)+0.01
 end
 
--- burst of calcium influx for active synapses
+-- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
 	if 	(si>=6 and si<=13 and syns["start"..si]<=t and t<syns["end"..si])
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
-	then efflux = -5e-4
+	then efflux = -2e-4
 	else efflux = 0.0
 	end	
     return true, efflux
 end
 
--- time-shifted burst of ip3 at active synapses
-ip3EntryDelay = 0.005
-ip3EntryDuration = 1.0
+-- burst of ip3 at active synapses (triangular, immediate)
+ip3EntryDelay = 0.000
+ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
 	if 	(si>=6 and si<=13 and syns["start"..si]+ip3EntryDelay<=t
 	     and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = -2.1e-5
+	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
 	else efflux = 0.0
-	end	
+	end
     return true, efflux
 end
 
