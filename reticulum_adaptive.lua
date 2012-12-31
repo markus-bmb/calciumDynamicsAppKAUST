@@ -165,7 +165,7 @@ ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
 	if 	(si>=6 and si<=13 and syns["start"..si]+ip3EntryDelay<=t
 	     and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - 2.1e-6/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
+	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
 	else efflux = 0.0
 	end
     return true, efflux
@@ -186,7 +186,7 @@ approxSpace = ApproximationSpace(dom)
 innerDomain = "er, mem_er"
 outerDomain = "cyt, nuc, mem_cyt, mem_er, mem_nuc"
 synapses = ""
-for i=1,1 do
+for i=1,8 do
 	synapses = synapses .. ", syn" .. i
 end
 outerDomain = outerDomain .. synapses
@@ -533,7 +533,7 @@ while time < timeStep*nTimeSteps do
 		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 do
 			dt = 2*dt;
 			lv = lv - 1
-			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / cb_interval
+			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
 			cb_counter[lv+1] = 0
 		end
 		
