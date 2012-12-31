@@ -14,8 +14,8 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "rc19_amp.ugx"
---gridName = "RC19amp_ug4_finished.ugx"
+--gridName = "rc19_amp.ugx"
+gridName = "RC19amp_ug4_finished.ugx" -- defect!?
 --gridName = "simple_reticulum_3d.ugx"
 
 -- refinements before distributing grid
@@ -53,11 +53,12 @@ ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
 
---[[ Calmodulin
+
+-- calmodulin --
 totalClmd = 2*21.9e-6;
 
 -- calmodulin diffusion coefficient
-D_clmd = 0.25;
+D_clm = 0.25;
 
 -- calmodulin binding rates
 k_bind_clmd_c = 	2.3e06
@@ -66,9 +67,18 @@ k_bind_clmd_n = 	1.6e08
 k_unbind_clmd_n = 	405.0
 
 -- initial concentrations
-clmd_c_init = totalClmd / (k_bind_clmd_c/k_unbind_clmd_c*ca_cyt_init + 1)
-clmd_n_init = totalClmd / (k_bind_clmd_n/k_unbind_clmd_n*ca_cyt_init + 1)
---]]
+clmC_init = totalClmd / (k_bind_clmd_c/k_unbind_clmd_c*ca_cyt_init + 1)
+clmN_init = totalClmd / (k_bind_clmd_n/k_unbind_clmd_n*ca_cyt_init + 1)
+
+
+-- reaction reate IP3
+reactionRateIP3 = 0.11
+
+-- equilibrium concentration IP3
+equilibriumIP3 = 4.0e-08
+
+-- reation term IP3
+reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
@@ -87,6 +97,14 @@ end
 
 function clbStart(x, y, z, t)
     return clb_init
+end
+
+function clmCStart(x, y, z, t)
+    return clmC_init
+end
+
+function clmNStart(x, y, z, t)
+    return clmN_init
 end
 
 function ourDiffTensorCAcyt(x, y, z, t)
@@ -111,6 +129,12 @@ function ourDiffTensorClb(x, y, z, t)
     return	D_clb, 0, 0,
             0, D_clb, 0,
             0, 0, D_clb
+end
+
+function ourDiffTensorClm(x, y, z, t)
+    return D_clm, 0, 0,
+           0, D_clm, 0,
+           0, 0, D_clm
 end
 
 function ourRhs(x, y, z, t)
@@ -141,7 +165,7 @@ ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
 	if 	(si>=6 and si<=13 and syns["start"..si]+ip3EntryDelay<=t
 	     and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
+	then efflux = - 2.1e-6/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
 	else efflux = 0.0
 	end
     return true, efflux
@@ -171,8 +195,8 @@ approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
---approxSpace:add_fct("clmd_c", "Lagrange", 1, outerDomain)
---approxSpace:add_fct("clmd_n", "Lagrange", 1, outerDomain)
+--approxSpace:add_fct("clm_c", "Lagrange", 1, outerDomain)
+--approxSpace:add_fct("clm_n", "Lagrange", 1, outerDomain)
 
 approxSpace:init_levels()
 approxSpace:print_layout_statistic()
@@ -188,12 +212,15 @@ CaCytStartValue = LuaUserNumber3d("CaCytStart")
 CaERStartValue = LuaUserNumber3d("CaERStart")
 IP3StartValue = LuaUserNumber3d("IP3Start")
 ClbStartValue = LuaUserNumber3d("clbStart")
+ClmCStartValue = LuaUserNumber3d("clmCStart")
+ClmNStartValue = LuaUserNumber3d("clmNStart")
 
 -- diffusion Tensor setup
 diffusionMatrixCAcyt = LuaUserMatrix3d("ourDiffTensorCAcyt")
 diffusionMatrixCAer = LuaUserMatrix3d("ourDiffTensorCAer")
 diffusionMatrixIP3 = LuaUserMatrix3d("ourDiffTensorIP3")
 diffusionMatrixClb = LuaUserMatrix3d("ourDiffTensorClb")
+diffusionMatrixClm = LuaUserMatrix3d("ourDiffTensorClm")
 
 -- rhs setup
 rhs = LuaUserNumber3d("ourRhs")
@@ -237,6 +264,8 @@ elemDiscCYT:set_upwind(upwind)
 elemDiscIP3 = ConvectionDiffusion("ip3", "cyt, nuc")
 elemDiscIP3:set_disc_scheme("fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
+elemDiscIP3:set_reaction_rate(reactionRateIP3)
+elemDiscIP3:set_reaction(reactionTermIP3)
 elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
@@ -246,6 +275,19 @@ elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
+--[[
+elemDiscClmC = ConvectionDiffusion("clm_c", "cyt, nuc")
+elemDiscClb:set_disc_scheme("fv1")
+elemDiscClb:set_diffusion(diffusionMatrixClm)
+elemDiscClb:set_source(rhs)
+elemDiscClb:set_upwind(upwind)
+
+elemDiscClmN = ConvectionDiffusion("clm_n", "cyt, nuc")
+elemDiscClb:set_disc_scheme("fv1")
+elemDiscClb:set_diffusion(diffusionMatrixClm)
+elemDiscClb:set_source(rhs)
+elemDiscClb:set_upwind(upwind)
+--]]
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
@@ -258,15 +300,15 @@ elemDiscBuffering:add_reaction(
 	k_unbind_clb)				    -- unbinding rate constant
 
 --[[ Calmodulin
-elemDiscBuffering = FV1Buffer("cyt")
-elemDiscBuffering:add_reaction(
-	"clmd_c",
+elemDiscBuffering_clm = FV1Buffer("cyt")
+elemDiscBuffering_clm:add_reaction(
+	"clm_c",
 	"ca_cyt",
 	totalClmd,
 	k_bind_clmd_c,
 	k_unbind_clmd_c)
-elemDiscBuffering:add_reaction(
-	"clmd_n",
+elemDiscBuffering_clm:add_reaction(
+	"clm_n",
 	"ca_cyt",				
 	totalClmd,
 	k_bind_clmd_n,
@@ -312,9 +354,12 @@ domainDisc:add(elemDiscER)
 domainDisc:add(elemDiscCYT)
 domainDisc:add(elemDiscIP3)
 domainDisc:add(elemDiscClb)
+--domainDisc:add(elemDiscClmC)
+--domainDisc:add(elemDiscClmN)
 
 -- buffering disc
 domainDisc:add(elemDiscBuffering)
+--domainDisc:add(elemDiscBuffering_clm)
 
 -- (outer) boundary conditions
 domainDisc:add(neumannDiscCA)
@@ -377,7 +422,7 @@ gmg:set_num_postsmooth(3)
 convCheck = ConvCheck()
 convCheck:set_maximum_steps(50)
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-6)
+convCheck:set_reduction(1e-04)
 convCheck:set_verbose(true)
 bicgstabSolver = BiCGStab()
 bicgstabSolver:set_preconditioner(gmg)
@@ -388,10 +433,10 @@ bicgstabSolver:set_convergence_check(convCheck)
 -----------------------
 -- convergence check
 newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace)
-newtonConvCheck:set_functions("ip3")
+newtonConvCheck:set_functions("")
 newtonConvCheck:set_maximum_steps(20)
-newtonConvCheck:set_minimum_defect({1e-20}, 1e-20)
-newtonConvCheck:set_reduction({1e-08}, 1e-08)
+newtonConvCheck:set_minimum_defect({}, 1e-18)
+newtonConvCheck:set_reduction({}, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:timeMeasurement(true)
 --[[
@@ -421,6 +466,8 @@ Interpolate(CaCytStartValue, u, "ca_cyt", 0.0)
 Interpolate(CaERStartValue, u, "ca_er", 0.0)
 Interpolate(IP3StartValue, u, "ip3", 0.0)
 Interpolate(ClbStartValue, u, "clb", 0.0)
+--Interpolate(ClmCStartValue, u, "clm_c", 0.0)
+--Interpolate(ClmNStartValue, u, "clm_n", 0.0)
 
 -- timestep in seconds
 dt = timeStep
@@ -428,12 +475,12 @@ time = 0.0
 step = 0
 
 -- filename for output
-filename = "/Users/markus/Developing/ug4/trunk/bin/retic/result"
+filename = "retic/result"
 
 -- write start solution
 out = VTKOutput()
 out:print(filename, u, step, time)
---takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
+takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
 
 -- some info output
@@ -469,13 +516,13 @@ for step = 1, nTimeSteps do
 	-- update new time
 	time = solTimeSeries:time(0) + do_dt
 	
-	-- plot solution every 0.001 seconds of simulated time
-	if math.abs(time/0.001 - math.floor(time/0.001+0.5)) < 1e-9
-	then out:print(filename, u, math.floor(time/0.001+0.5), time)
+	-- plot solution every 0.005 seconds of simulated time
+	if math.abs(time/0.005 - math.floor(time/0.005+0.5)) < 1e-9
+	then out:print(filename, u, math.floor(time/0.005+0.5), time)
 	end
 	
 	-- take measurement in nucleus
-	--takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
+	takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
 	
 	-- export solution of ca on mem_er
 	--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
