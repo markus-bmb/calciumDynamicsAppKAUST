@@ -475,10 +475,11 @@ step = 0
 filename = "retic/result"
 
 -- write start solution
+plotStep = 0.010
 print("Writing start values")
 out = VTKOutput()
 out:print(filename, u, step, time)
---takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
+takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
 
 -- some info output
@@ -494,7 +495,7 @@ solTimeSeries:push(uOld, time)
 
 
 min_dt = timeStep / 2048.0
-cb_interval = 20
+cb_interval = 25
 lv = 0
 cb_counter = {}
 cb_counter[0] = 0
@@ -537,17 +538,19 @@ while time < timeStep*nTimeSteps do
 			cb_counter[lv+1] = 0
 		end
 		
-		-- plot solution
-		if time % 0.001 < 1e-8
-		then out:print(filename, u, math.floor(time/0.001), time)
+		-- plot solution every plotStep seconds
+		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5
+		then out:print(filename, u, math.floor(time/plotStep+0.5), time)
 		end
 		
-		-- take measurement in nucleus
-		--takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
-		
+		-- take measurement in nucleus every timeStep seconds 
+		if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
+		then 
+			takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", "measurements")
+		end
+				
 		-- export solution of ca on mem_er
 		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
-		
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
