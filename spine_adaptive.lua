@@ -55,7 +55,7 @@ k_bind_clb = 	27.0e06
 k_unbind_clb = 	19
 
 -- initial concentrations
-ca_cyt_init = 7.5e-8
+ca_cyt_init = 2.5e-8
 ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
@@ -168,7 +168,7 @@ end
 
 -- burst of ip3 at active synapses (triangular, immediate)
 ip3EntryDelay = 0.000
-ip3EntryDuration = 2.0
+ip3EntryDuration = 0.1
 function ourNeumannBndIP3(x, y, z, t, si)
 	if 	(si==9 and syns["start"..si]+ip3EntryDelay<=t
 	     and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
@@ -328,6 +328,7 @@ elemDiscBuffering_clm:add_reaction(
 innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", "mem_er, mem_app")
 innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", "mem_er")
 innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", "mem_er, mem_app")
+innerDiscLeak = FV1InnerBoundaryLeak("ca_cyt, ca_er", "mem_er, mem_app")
 
 ------------------------------
 -- setup Neumann boundaries --
@@ -375,6 +376,7 @@ domainDisc:add(neumannDiscIP3)
 domainDisc:add(innerDiscIP3R)
 domainDisc:add(innerDiscRyR)
 domainDisc:add(innerDiscSERCA)
+domainDisc:add(innerDiscLeak)
 
 --domainDisc:add(dirichletBND)
 --domainDisc:add(membraneDirichletBND)
@@ -492,7 +494,7 @@ fileName = "normSpine/result"
 -- write start solution
 print("Writing start values")
 out = VTKOutput()
-out:print(filename, u, step, time)
+out:print(fileName, u, step, time)
 takeMeasurement(u, approxSpace, time, "head", "ca_cyt", "measurements_ca_head")
 takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", "measurements_ca_neck")
 takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", "measurements_ca_dend")
@@ -556,7 +558,7 @@ while time < timeStep*nTimeSteps do
 		
 		-- plot solution every plotStep seconds
 		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5
-		then out:print(filename, u, math.floor(time/plotStep+0.5), time)
+		then out:print(fileName, u, math.floor(time/plotStep+0.5), time)
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
@@ -585,4 +587,4 @@ while time < timeStep*nTimeSteps do
 end
 
 -- end timeseries, produce gathering file
-out:write_time_pvd(filename, u)
+out:write_time_pvd(fileName, u)
