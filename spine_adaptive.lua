@@ -55,7 +55,7 @@ k_bind_clb = 	27.0e06
 k_unbind_clb = 	19
 
 -- initial concentrations
-ca_cyt_init = 2.5e-8
+ca_cyt_init = 4.0e-8
 ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
@@ -156,6 +156,7 @@ for i=9,9 do
 	syns["end"..i] = 0.005*(i-9)+0.01
 end
 
+
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
 	if 	(si==9 and syns["start"..si]<=t and t<syns["end"..si])
@@ -166,9 +167,10 @@ function ourNeumannBndCA(x, y, z, t, si)
     return true, efflux
 end
 
+
 -- burst of ip3 at active synapses (triangular, immediate)
 ip3EntryDelay = 0.000
-ip3EntryDuration = 0.1
+ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
 	if 	(si==9 and syns["start"..si]+ip3EntryDelay<=t
 	     and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
@@ -176,6 +178,54 @@ function ourNeumannBndIP3(x, y, z, t, si)
 	else efflux = 0.0
 	end
     return true, efflux
+end
+
+
+-- PMCA pumps (h2b variant)
+PMCA =
+{
+	Kd		= 6.0e-08,	-- mol*dm^-3 (Elwess et al.)
+--  Kd		= 3.4e-07,	-- mol*dm^-3 (Graupner) 
+	maxFlux	= 1.7e-23,	-- mol*s^-1
+	density	= 3.0e03		-- µm^-2
+}
+
+function PMCAfluxDensity(caCyt)
+	local gatingFactor = 1.0 / (PMCA['Kd']*PMCA['Kd']/caCyt/caCyt + 1.0)
+	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
+	return PMCA['density'] * PMCA['maxFlux'] * gatingFactor * dimCorrFactor;
+end
+
+function PMCAfluxDensityDeriv(caCyt)
+	local d_gatingFactor = 2*PMCA['Kd']*PMCA['Kd']*caCyt / math.pow(PMCA['Kd']*PMCA['Kd'] + caCyt*caCyt, 2)
+	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
+	return PMCA['density'] * PMCA['maxFlux'] * d_gatingFactor * dimCorrFactor;
+end
+
+-- NCX pumps
+-- params according to Graupner et al.
+NCX =
+{
+	Kd		= 1.8e-06,	-- mol*dm^-3
+	maxFlux	= 2.5e-21,	-- mol*s^-1
+	density	= 1.0e02		-- µm^-2
+}
+	
+function NCXfluxDensity(caCyt)
+	local gatingFactor = 1.0 / (NCX['Kd']/caCyt + 1.0)
+	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
+	return NCX['density'] * NCX['maxFlux'] * gatingFactor * dimCorrFactor;
+end
+
+function NCXfluxDensityDeriv(caCyt)
+	local d_gatingFactor = NCX['Kd'] / ((NCX['Kd'] + caCyt) * (NCX['Kd'] + caCyt))
+	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
+	return NCX['density'] * NCX['maxFlux'] * d_gatingFactor * dimCorrFactor;
+end
+
+-- plasma membrane leakage
+function leakPM(x, y, z, t, si)
+	return true, 2.1e-20
 end
 
 -------------------------------
@@ -232,6 +282,11 @@ rhs = LuaUserNumber3d("ourRhs")
 -- Neumann setup (Neumann-0 represented by declaring nothing)
 neumannCA = LuaCondUserNumber3d("ourNeumannBndCA")
 neumannIP3 = LuaCondUserNumber3d("ourNeumannBndIP3")
+neumannPMCA = LuaUserFunctionNumber("PMCAfluxDensity", 1, false)
+	neumannPMCA:set_deriv(0, "PMCAfluxDensityDeriv")
+neumannNCX = LuaUserFunctionNumber("NCXfluxDensity", 1, false)
+	neumannNCX:set_deriv(0, "NCXfluxDensityDeriv")
+neumannLeak = LuaCondUserNumber3d("leakPM")
 
 --[[
 -- dirichlet setup
@@ -328,13 +383,25 @@ elemDiscBuffering_clm:add_reaction(
 innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", "mem_er, mem_app")
 innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", "mem_er")
 innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", "mem_er, mem_app")
-innerDiscLeak = FV1InnerBoundaryLeak("ca_cyt, ca_er", "mem_er, mem_app")
+innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", "mem_er, mem_app")
 
 ------------------------------
 -- setup Neumann boundaries --
 ------------------------------
 neumannDiscCA = NeumannBoundary("cyt, head, neck, dend")
 neumannDiscCA:add(neumannCA, "ca_cyt", "mem_cyt" .. synapses)
+
+--[[
+neumannPMCA:set_input(0, elemDiscCYT:value())
+--neumannDiscCA:add(neumannPMCA, "ca_cyt", "mem_cyt" .. synapses)
+neumannNCX:set_input(0, elemDiscCYT:value())
+--neumannDiscCA:add(neumannNCX, "ca_cyt", "mem_cyt" .. synapses)
+neumannDiscCA:add(neumannLeak, "ca_cyt", "mem_cyt" .. synapses)
+--]]
+neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", "mem_cyt" .. synapses)
+neumannDiscNCX = FV1BoundaryNCX("ca_cyt", "mem_cyt" .. synapses)
+neumannDiscLeak = FV1BoundaryPMLeak("", "mem_cyt" .. synapses)
+
 neumannDiscIP3 = NeumannBoundary("cyt, head, neck, dend")
 neumannDiscIP3:add(neumannIP3, "ip3", "mem_cyt" .. synapses)
 
@@ -370,6 +437,9 @@ domainDisc:add(elemDiscBuffering)
 
 -- (outer) boundary conditions
 domainDisc:add(neumannDiscCA)
+domainDisc:add(neumannDiscPMCA)
+domainDisc:add(neumannDiscNCX)
+domainDisc:add(neumannDiscLeak)
 domainDisc:add(neumannDiscIP3)
 
 -- ER flux
@@ -484,20 +554,20 @@ time = 0.0
 step = 0
 
 -- filename
-fileName = "normSpine/result"
---fileName = "movedApp/result"
---fileName = "bigSpineMovedApp/result"
---fileName = "bigSpineBigMovedApp/result"
---fileName = "bigSpineBigApp/result"
---fileName = "bigSpine/result"
+fileName = "normSpine/"
+--fileName = "movedApp/"
+--fileName = "bigSpineMovedApp/"
+--fileName = "bigSpineBigMovedApp/"
+--fileName = "bigSpineBigApp/"
+--fileName = "bigSpine/"
 
 -- write start solution
 print("Writing start values")
 out = VTKOutput()
-out:print(fileName, u, step, time)
-takeMeasurement(u, approxSpace, time, "head", "ca_cyt", "measurements_ca_head")
-takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", "measurements_ca_neck")
-takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", "measurements_ca_dend")
+out:print(fileName .. "result", u, step, time)
+takeMeasurement(u, approxSpace, time, "head", "ca_cyt", fileName .. "measurements_head")
+takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", fileName .. "measurements_neck")
+takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", fileName .. "measurements_dend")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
 
 -- some info output
@@ -558,15 +628,15 @@ while time < timeStep*nTimeSteps do
 		
 		-- plot solution every plotStep seconds
 		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5
-		then out:print(fileName, u, math.floor(time/plotStep+0.5), time)
+		then out:print(fileName .. "result", u, math.floor(time/plotStep+0.5), time)
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
-		takeMeasurement(u, approxSpace, time, "head", "ca_cyt", "measurements_head")
-		takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", "measurements_neck")
-		takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", "measurements_dend")
+		takeMeasurement(u, approxSpace, time, "head", "ca_cyt", fileName .. "measurements_head")
+		takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", fileName .. "measurements_neck")
+		takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", fileName .. "measurements_dend")
 		--end
 				
 		-- export solution of ca on mem_er
@@ -587,4 +657,5 @@ while time < timeStep*nTimeSteps do
 end
 
 -- end timeseries, produce gathering file
-out:write_time_pvd(fileName, u)
+out:write_time_pvd(fileName .. "result", u)
+
