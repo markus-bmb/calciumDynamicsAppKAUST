@@ -1,5 +1,5 @@
 ----------------------------------------------------------------
---  Example script for simulation on 3d spine model	          --
+--  Example script for simulation on 3d spine model	      --
 --                                                            --
 --  Author: Markus Breit                                      --
 ----------------------------------------------------------------
@@ -16,11 +16,11 @@ InitUG(dim, AlgebraType("CPU", 1));
 -- choice of grid
 gridName = "spines/normSpine.ugx"
 --gridName = "spines/movedApp.ugx"
---gridName = "spines/bigSpineMovedApp.ugx"
---gridName = "spines/bigSpineBigMovedApp.ugx"
---gridName = "spines/bigSpineBigApp.ugx"
 --gridName = "spines/bigSpine.ugx"
-
+--gridName = "spines/bigSpineMovedApp.ugx"
+--gridName = "spines/bigSpineBigApp.ugx"
+--gridName = "spines/bigSpineBigMovedApp.ugx"
+--gridName = "spines/bigSpine_smallER_longDend_scaled.ugx"
 
 -- refinements before distributing grid
 numPreRefs = util.GetParamNumber("-numPreRefs", 0)
@@ -159,7 +159,7 @@ end
 
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si==9 and syns["start"..si]<=t and t<syns["end"..si])
+	if 	(si==9 and syns["start"..si]<t and t<=syns["end"..si])
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
 	then efflux = -2e-4
 	else efflux = 0.0
@@ -172,8 +172,8 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
-	if 	(si==9 and syns["start"..si]+ip3EntryDelay<=t
-	     and t<syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
+	if 	(si==9 and syns["start"..si]+ip3EntryDelay<t
+	     and t<=syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
 	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
 	else efflux = 0.0
 	end
@@ -556,10 +556,11 @@ step = 0
 -- filename
 fileName = "normSpine/"
 --fileName = "movedApp/"
---fileName = "bigSpineMovedApp/"
---fileName = "bigSpineBigMovedApp/"
---fileName = "bigSpineBigApp/"
 --fileName = "bigSpine/"
+--fileName = "bigSpineMovedApp/"
+--fileName = "bigSpineBigApp/"
+--fileName = "bigSpineBigMovedApp/"
+--fileName = "bigSpine2/"
 
 -- write start solution
 print("Writing start values")
@@ -634,9 +635,9 @@ while time < timeStep*nTimeSteps do
 		-- take measurement in nucleus every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
-		takeMeasurement(u, approxSpace, time, "head", "ca_cyt", fileName .. "measurements_head")
-		takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", fileName .. "measurements_neck")
-		takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", fileName .. "measurements_dend")
+		takeMeasurement(u, approxSpace, time, "head", "ca_cyt", fileName.."measurements_head")
+		takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", fileName.."measurements_neck")
+		takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", fileName.."measurements_dend")
 		--end
 				
 		-- export solution of ca on mem_er
@@ -658,4 +659,3 @@ end
 
 -- end timeseries, produce gathering file
 out:write_time_pvd(fileName .. "result", u)
-
