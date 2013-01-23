@@ -447,7 +447,7 @@ gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(50)
+convCheck:set_maximum_steps(100)
 convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-06)
 convCheck:set_verbose(true)
@@ -596,3 +596,22 @@ end
 
 -- end timeseries, produce gathering file
 out:write_time_pvd(fileName .. "result", u)
+
+-- check if profiler is available
+if GetProfilerAvailable() == true then
+    print("")
+    -- get node
+    pn = GetProfileNode("main")
+--    pn2 = GetProfileNode("GMG_lmgc")
+    -- check if node is valid
+    if pn:is_valid() then
+	    print(pn:call_tree(0.0))
+	    print(pn:groups())
+--        print(pn2:total_time_sorted())
+    else
+        print("main is not known to the profiler.")
+    end
+else
+    print("Profiler not available.")
+end 
+
