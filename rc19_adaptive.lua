@@ -174,11 +174,25 @@ function RYRdensity(x,y,z,t,si)
 	return dens
 end
 
+-- this is a little bit more complicated, since it must be ensured that
+-- the net flux for equilibrium concentrations is zero
+-- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
 function SERCAdensity(x,y,z,t,si)
-	return dcf*1973.0
+	local v_s = 6.5e-27						-- V_S param of SERCA pump
+	local k_s = 1.8e-7						-- K_S param of SERCA pump
+	local j_ip3r = 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
+	
+	dens = 	  IP3Rdensity(x,y,z,t,si) * j_ip3r
+			+ RYRdensity(x,y,z,t,si) * j_ryr
+			+ LEAKERconstant(x,y,z,t,si) * j_leak
+	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
+	return dens
 end
 
 function LEAKERconstant(x,y,z,t,si)
+	local dens = dendLengthPos(x,y,z)
 	return dcf*3.4e-17
 end
 
@@ -442,11 +456,11 @@ domainDisc:add(elemDiscBuffering)
 --domainDisc:add(elemDiscBuffering_clm)
 
 -- (outer) boundary conditions
-domainDisc:add(neumannDiscCA)
+--domainDisc:add(neumannDiscCA)
+--domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
-domainDisc:add(neumannDiscIP3)
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
@@ -583,8 +597,8 @@ cb_interval = 10
 lv = 0
 cb_counter = {}
 cb_counter[0] = 0
-while time < endTime do
-	print("++++++ POINT IN TIME  " .. time+dt .. "s  BEGIN ++++++")
+while (time-endTime) < 0.001*dt do
+	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
 	
 	-- setup time Disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
@@ -648,7 +662,7 @@ while time < endTime do
 		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
 		solTimeSeries:push_discard_oldest(oldestSol, time)
 		
-		print("++++++ POINT IN TIME  " .. time .. "s  END ++++++++");
+		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
 	end
 
 end
