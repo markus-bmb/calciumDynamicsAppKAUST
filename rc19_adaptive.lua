@@ -14,23 +14,29 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "rc19_amp_measZones.ugx"
---gridName = "rc19_amp_new.ugx"
---gridName = "rc19_amp.ugx"					-- deprecated
---gridName = "RC19amp_ug4_finished.ugx"		-- dead
---gridName = "simple_reticulum_3d.ugx"		-- for testing
+gridName = "rc19/rc19_amp_measZones.ugx"
+--gridName = "rc19/rc19_amp_new.ugx"
+--gridName = "rc19/rc19_amp.ugx"					-- deprecated
+--gridName = "rc19/RC19amp_ug4_finished.ugx"		-- dead
+--gridName = "simple_reticulum_3d.ugx"				-- for testing
 
 -- refinements before distributing grid
 numPreRefs = util.GetParamNumber("-numPreRefs", 0)
 
 -- total refinements
-numRefs    = util.GetParamNumber("-numRefs",    0)
-
--- choose number of time steps
-nTimeSteps =  util.GetParamNumber("-nTimeSteps", 5)
+numRefs = util.GetParamNumber("-numRefs",    0)
 
 -- choose length of time step
-timeStep =  util.GetParamNumber("-tstep", 0.01)
+timeStep = util.GetParamNumber("-tstep", 0.01)
+
+-- choose end time
+endTime = util.GetParamNumber("-endTime")
+if (endTime == nil)
+then
+	-- choose number of time steps
+	nTimeSteps = util.GetParamNumber("-nTimeSteps", 1)
+	endTime = nTimeSteps*timeStep
+end
 
 -- chose plotting interval
 plotStep = util.GetParamNumber("-pstep", 0.01)
@@ -147,7 +153,7 @@ dcf = 2.0
 
 -- project coordinates on dendritic length from soma (approx.)
 function dendLengthPos(x,y,z)
-	return (0.92*(x-2.2) +0.39*(y+10.5) -0.04*(z+1.2) / 110.0
+	return (0.92*(x-2.2) +0.39*(y+10.5) -0.04*(z+1.2)) / 110.0
 end
 
 function IP3Rdensity(x,y,z,t,si)
@@ -156,7 +162,7 @@ function IP3Rdensity(x,y,z,t,si)
 	dens = 1.4 -2.8*dens +6.6*math.pow(dens,2) -7.0*math.pow(dens,3) +2.8*math.pow(dens,4)
 	dens = dens * dcf * 17.3;
 	-- cluster for branching points
-	if (si>=29 and si<=30) then dens = dens * 10; 
+	if (si>=29 and si<=30) then dens = dens * 10 end 
 	return dens
 end
 
@@ -272,7 +278,7 @@ end
 erMem = erMem .. branches
 
 outerDomain = cytVol .. ", " .. nucVol .. ", " .. nucMem .. ", " .. plMem .. ", " .. erMem
-innerDomain = erVol .. ", " erMem
+innerDomain = erVol .. ", " .. erMem
 
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
@@ -326,13 +332,13 @@ elemDiscER:set_diffusion(diffusionMatrixCAer)
 elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..nucVol)
+elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..", "..nucVol)
 elemDiscCYT:set_disc_scheme("fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..nucVol)
+elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..", "..nucVol)
 elemDiscIP3:set_disc_scheme("fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
@@ -340,20 +346,20 @@ elemDiscIP3:set_reaction(reactionTermIP3)
 elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
-elemDiscClb = ConvectionDiffusion("clb", cytVol..nucVol)
+elemDiscClb = ConvectionDiffusion("clb", cytVol..", "..nucVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 --[[
-elemDiscClmC = ConvectionDiffusion("clm_c", cytVol..nucVol)
+elemDiscClmC = ConvectionDiffusion("clm_c", cytVol..", "..nucVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClm)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
-elemDiscClmN = ConvectionDiffusion("clm_n", cytVol..nucVol)
+elemDiscClmN = ConvectionDiffusion("clm_n", cytVol..", "..nucVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClm)
 elemDiscClb:set_source(rhs)
@@ -559,13 +565,10 @@ out = VTKOutput()
 out:print(fileName .. "vtk/result", u, step, time)
 takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "meas/nuc")
 for i=1,15 do
-	takeMeasurement(u, approxSpace, time, "meas"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
+	takeMeasurement(u, approxSpace, time, "measZone"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
 end
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
--- some info output
-print( "   numPreRefs is   " .. numPreRefs ..     ",  numRefs is         " .. numRefs)
-print( "   nTimeSteps is " .. nTimeSteps)
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -580,7 +583,7 @@ cb_interval = 10
 lv = 0
 cb_counter = {}
 cb_counter[0] = 0
-while time < timeStep*nTimeSteps do
+while time < endTime do
 	print("++++++ POINT IN TIME  " .. time+dt .. "s  BEGIN ++++++")
 	
 	-- setup time Disc for old solutions and timestep
@@ -601,7 +604,7 @@ while time < timeStep*nTimeSteps do
 		if dt < min_dt
 		then 
 			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
-			time = timeStep*nTimeSteps
+			time = endTime
 		else
 			print ("Trying with half the time step...")
 			cb_counter[lv] = 0
@@ -629,7 +632,7 @@ while time < timeStep*nTimeSteps do
 		--then
 			takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "meas/nuc")
 			for i=1,15 do
-				takeMeasurement(u, approxSpace, time, "meas"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
+				takeMeasurement(u, approxSpace, time, "measZone"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
 			end
 		--end
 				
@@ -653,7 +656,7 @@ end
 -- end timeseries, produce gathering file
 out:write_time_pvd(fileName .. "vtk/result", u)
 
---[[
+
 -- check if profiler is available
 if GetProfilerAvailable() == true then
     print("")
@@ -670,5 +673,4 @@ if GetProfilerAvailable() == true then
     end
 else
     print("Profiler not available.")
-end 
---]]
+end
