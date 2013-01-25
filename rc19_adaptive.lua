@@ -14,10 +14,11 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "rc19_amp_new.ugx"
---gridName = "rc19_amp.ugx"
---gridName = "RC19amp_ug4_finished.ugx"
---gridName = "simple_reticulum_3d.ugx"
+gridName = "rc19_amp_measZones.ugx"
+--gridName = "rc19_amp_new.ugx"
+--gridName = "rc19_amp.ugx"					-- deprecated
+--gridName = "RC19amp_ug4_finished.ugx"		-- dead
+--gridName = "simple_reticulum_3d.ugx"		-- for testing
 
 -- refinements before distributing grid
 numPreRefs = util.GetParamNumber("-numPreRefs", 0)
@@ -144,12 +145,27 @@ end
 -- density correction factor (simulates larger surface area of ER caused by stacking etc.)
 dcf = 2.0
 
+-- project coordinates on dendritic length from soma (approx.)
+function dendLengthPos(x,y,z)
+	return (0.92*(x-2.2) +0.39*(y+10.5) -0.04*(z+1.2) / 110.0
+end
+
 function IP3Rdensity(x,y,z,t,si)
-	return dcf*17.3
+	local dens = dendLengthPos(x,y,z)
+	-- fourth order polynomial, distance to soma
+	dens = 1.4 -2.8*dens +6.6*math.pow(dens,2) -7.0*math.pow(dens,3) +2.8*math.pow(dens,4)
+	dens = dens * dcf * 17.3;
+	-- cluster for branching points
+	if (si>=29 and si<=30) then dens = dens * 10; 
+	return dens
 end
 
 function RYRdensity(x,y,z,t,si)
-	return dcf*0.86
+	local dens = dendLengthPos(x,y,z)
+	-- fourth order polynomial, distance to soma
+	dens = 1.5 -3.5*dens +9.1*math.pow(dens,2) -10.5*math.pow(dens,3) +4.3*math.pow(dens,4)
+	dens = dens * dcf * 0.86; 
+	return dens
 end
 
 function SERCAdensity(x,y,z,t,si)
@@ -228,13 +244,35 @@ SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..GetProcessRank().."
 -- create approximation space
 print("Create ApproximationSpace")
 approxSpace = ApproximationSpace(dom)
-innerDomain = "er, mem_er"
-outerDomain = "cyt, nuc, mem_cyt, mem_er, mem_nuc"
+
+cytVol = "cyt"
+measZones = ""
+for i=1,15 do
+	measZones = measZones .. ", measZone" .. i
+end
+cytVol = cytVol .. measZones
+
+nucVol = "nuc"
+nucMem = "mem_nuc"
+
+erVol = "er"
+
+plMem = "mem_cyt"
 synapses = ""
 for i=1,8 do
 	synapses = synapses .. ", syn" .. i
 end
-outerDomain = outerDomain .. synapses
+plMem = plMem .. synapses
+
+erMem = "mem_er"
+branches = ""
+for i=1,2 do
+	branches = branches .. ", branch" .. i
+end
+erMem = erMem .. branches
+
+outerDomain = cytVol .. ", " .. nucVol .. ", " .. nucMem .. ", " .. plMem .. ", " .. erMem
+innerDomain = erVol .. ", " erMem
 
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
@@ -282,19 +320,19 @@ elseif dim == 3 then
     upwind = NoUpwind3d()
 end
 
-elemDiscER = ConvectionDiffusion("ca_er", "er") 
+elemDiscER = ConvectionDiffusion("ca_er", erVol) 
 elemDiscER:set_disc_scheme("fv1")
 elemDiscER:set_diffusion(diffusionMatrixCAer)
 elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", "cyt, nuc")
+elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..nucVol)
 elemDiscCYT:set_disc_scheme("fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", "cyt, nuc")
+elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..nucVol)
 elemDiscIP3:set_disc_scheme("fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
@@ -302,20 +340,20 @@ elemDiscIP3:set_reaction(reactionTermIP3)
 elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
-elemDiscClb = ConvectionDiffusion("clb", "cyt, nuc")
+elemDiscClb = ConvectionDiffusion("clb", cytVol..nucVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 --[[
-elemDiscClmC = ConvectionDiffusion("clm_c", "cyt, nuc")
+elemDiscClmC = ConvectionDiffusion("clm_c", cytVol..nucVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClm)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
-elemDiscClmN = ConvectionDiffusion("clm_n", "cyt, nuc")
+elemDiscClmN = ConvectionDiffusion("clm_n", cytVol..nucVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClm)
 elemDiscClb:set_source(rhs)
@@ -324,7 +362,7 @@ elemDiscClb:set_upwind(upwind)
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
-elemDiscBuffering = FV1Buffer("cyt")	-- where buffering occurs
+elemDiscBuffering = FV1Buffer(cytVol)	-- where buffering occurs
 elemDiscBuffering:add_reaction(
 	"clb",						    -- the buffering substance
 	"ca_cyt",						-- the buffered substance
@@ -333,7 +371,7 @@ elemDiscBuffering:add_reaction(
 	k_unbind_clb)				    -- unbinding rate constant
 
 --[[ Calmodulin
-elemDiscBuffering_clm = FV1Buffer("cyt")
+elemDiscBuffering_clm = FV1Buffer(cytVol)
 elemDiscBuffering_clm:add_reaction(
 	"clm_c",
 	"ca_cyt",
@@ -354,13 +392,13 @@ elemDiscBuffering_clm:add_reaction(
 
 -- We pass the function needed to evaluate the flux function here.
 -- The order, in which the discrete fcts are passed, is crucial!
-innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", "mem_er")
+innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", erMem)
 innerDiscIP3R:set_density_function("IP3Rdensity")
-innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", "mem_er")
+innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", erMem)
 innerDiscRyR:set_density_function("RYRdensity")
-innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", "mem_er")
+innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", erMem)
 innerDiscSERCA:set_density_function("SERCAdensity")
-innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", "mem_er")
+innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", erMem)
 innerDiscLeak:set_density_function("LEAKERconstant")
 
 ------------------------------
@@ -368,15 +406,15 @@ innerDiscLeak:set_density_function("LEAKERconstant")
 ------------------------------
 -- synaptic activity
 neumannDiscCA = NeumannBoundary("cyt")
-neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", "mem_cyt" .. synapses)
+neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", plMem)
 neumannDiscIP3 = NeumannBoundary("cyt")
-neumannDiscIP3:add("ourNeumannBndIP3", "ip3", "mem_cyt" .. synapses)
+neumannDiscIP3:add("ourNeumannBndIP3", "ip3", plMem)
 -- plasma membrane transport systems
-neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", "mem_cyt" .. synapses)
+neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", plMem)
 neumannDiscPMCA:set_density_function("PMCAdensity")
-neumannDiscNCX = FV1BoundaryNCX("ca_cyt", "mem_cyt" .. synapses)
+neumannDiscNCX = FV1BoundaryNCX("ca_cyt", plMem)
 neumannDiscNCX:set_density_function("NCXdensity")
-neumannDiscLeak = FV1BoundaryPMLeak("", "mem_cyt" .. synapses)
+neumannDiscLeak = FV1BoundaryPMLeak("", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
 
 
@@ -518,9 +556,12 @@ fileName = "rc19/"
 -- write start solution
 print("Writing start values")
 out = VTKOutput()
-out:print(fileName .. "result", u, step, time)
-takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "measurements_nuc")
---exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
+out:print(fileName .. "vtk/result", u, step, time)
+takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "meas/nuc")
+for i=1,15 do
+	takeMeasurement(u, approxSpace, time, "meas"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
+end
+--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
 -- some info output
 print( "   numPreRefs is   " .. numPreRefs ..     ",  numRefs is         " .. numRefs)
@@ -580,17 +621,20 @@ while time < timeStep*nTimeSteps do
 		
 		-- plot solution every plotStep seconds
 		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5
-		then out:print(fileName .. "result", u, math.floor(time/plotStep+0.5), time)
+		then out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
-		--then 
-			takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "measurements_nuc")
+		--then
+			takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "meas/nuc")
+			for i=1,15 do
+				takeMeasurement(u, approxSpace, time, "meas"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
+			end
 		--end
 				
 		-- export solution of ca on mem_er
-		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
+		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
@@ -607,7 +651,7 @@ while time < timeStep*nTimeSteps do
 end
 
 -- end timeseries, produce gathering file
-out:write_time_pvd(fileName .. "result", u)
+out:write_time_pvd(fileName .. "vtk/result", u)
 
 --[[
 -- check if profiler is available
