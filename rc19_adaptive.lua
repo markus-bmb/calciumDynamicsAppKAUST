@@ -224,7 +224,7 @@ end
 
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si>=6 and si<=13 and syns["start"..si]<=t and t<syns["end"..si])
+	if 	(si>=6 and si<=13 and syns["start"..si]<t and t<=syns["end"..si])
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
 	then efflux = -2e-4
 	else efflux = 0.0
@@ -456,8 +456,8 @@ domainDisc:add(elemDiscBuffering)
 --domainDisc:add(elemDiscBuffering_clm)
 
 -- (outer) boundary conditions
---domainDisc:add(neumannDiscCA)
---domainDisc:add(neumannDiscIP3)
+domainDisc:add(neumannDiscCA)
+domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
