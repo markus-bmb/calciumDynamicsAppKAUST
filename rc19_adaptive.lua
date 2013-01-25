@@ -141,6 +141,38 @@ function ourDiffTensorClm(x, y, z, t)
            0, 0, D_clm
 end
 
+-- density correction factor (simulates larger surface area of ER caused by stacking etc.)
+dcf = 2.0
+
+function IP3Rdensity(x,y,z,t,si)
+	return dcf*17.3
+end
+
+function RYRdensity(x,y,z,t,si)
+	return dcf*0.86
+end
+
+function SERCAdensity(x,y,z,t,si)
+	return dcf*1973.0
+end
+
+function LEAKERconstant(x,y,z,t,si)
+	return dcf*3.4e-17
+end
+
+function PMCAdensity(x,y,z,t,si)
+	return 100.0
+end
+
+function NCXdensity(x,y,z,t,si)
+	return 3.0
+end
+
+function LEAKPMconstant(x,y,z,t,si)
+	return 6.8e-22
+end
+
+
 function ourRhs(x, y, z, t)
     return 0;
 end
@@ -238,18 +270,6 @@ diffusionMatrixClm = LuaUserMatrix3d("ourDiffTensorClm")
 -- rhs setup
 rhs = LuaUserNumber3d("ourRhs")
 
--- Neumann setup (Neumann-0 represented by declaring nothing)
-neumannCA = LuaCondUserNumber3d("ourNeumannBndCA")
-neumannIP3 = LuaCondUserNumber3d("ourNeumannBndIP3")
-
---[[
--- dirichlet setup
-	dirichlet = LuaCondUserNumber3d("ourDirichletBnd")
-	
--- dirichlet setup
-	membraneDirichlet = LuaCondUserNumber3d("membraneDirichletBnd")
---]]
-
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
@@ -335,35 +355,30 @@ elemDiscBuffering_clm:add_reaction(
 -- We pass the function needed to evaluate the flux function here.
 -- The order, in which the discrete fcts are passed, is crucial!
 innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", "mem_er")
+innerDiscIP3R:set_density_function("IP3Rdensity")
 innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", "mem_er")
+innerDiscRyR:set_density_function("RYRdensity")
 innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", "mem_er")
+innerDiscSERCA:set_density_function("SERCAdensity")
 innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", "mem_er")
+innerDiscLeak:set_density_function("LEAKERconstant")
 
 ------------------------------
 -- setup Neumann boundaries --
 ------------------------------
+-- synaptic activity
 neumannDiscCA = NeumannBoundary("cyt")
-neumannDiscCA:add(neumannCA, "ca_cyt", "mem_cyt" .. synapses)
-
-neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", "mem_cyt" .. synapses)
-neumannDiscNCX = FV1BoundaryNCX("ca_cyt", "mem_cyt" .. synapses)
-neumannDiscLeak = FV1BoundaryPMLeak("", "mem_cyt" .. synapses)
-
+neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", "mem_cyt" .. synapses)
 neumannDiscIP3 = NeumannBoundary("cyt")
-neumannDiscIP3:add(neumannIP3, "ip3", "mem_cyt" .. synapses)
+neumannDiscIP3:add("ourNeumannBndIP3", "ip3", "mem_cyt" .. synapses)
+-- plasma membrane transport systems
+neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", "mem_cyt" .. synapses)
+neumannDiscPMCA:set_density_function("PMCAdensity")
+neumannDiscNCX = FV1BoundaryNCX("ca_cyt", "mem_cyt" .. synapses)
+neumannDiscNCX:set_density_function("NCXdensity")
+neumannDiscLeak = FV1BoundaryPMLeak("", "mem_cyt" .. synapses)
+neumannDiscLeak:set_density_function("LEAKPMconstant")
 
---[[
------------------------------------------------------------------
---  Setup Dirichlet Boundary
------------------------------------------------------------------
-
-dirichletBND = DirichletBoundary()
-dirichletBND:add(dirichlet, "c", "Boundary, MembraneBnd")
-
-membraneDirichletBND = DirichletBoundary()
-membraneDirichletBND:add(membraneDirichlet, "c_membrane", "MembraneBnd")
-
---]]
 
 ------------------------------------------
 -- setup complete domain discretization --
@@ -394,9 +409,6 @@ domainDisc:add(innerDiscIP3R)
 domainDisc:add(innerDiscRyR)
 domainDisc:add(innerDiscSERCA)
 domainDisc:add(innerDiscLeak)
-
---domainDisc:add(dirichletBND)
---domainDisc:add(membraneDirichletBND)
 
 -------------------------------
 -- setup time discretization --
@@ -430,7 +442,7 @@ exactSolver = LU()
 baseConvCheck = ConvCheck()
 baseConvCheck:set_maximum_steps(1000)
 baseConvCheck:set_minimum_defect(1e-28)
-baseConvCheck:set_reduction(1e-2)
+baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
 base = LinearSolver()
 base:set_convergence_check(baseConvCheck)
@@ -447,12 +459,12 @@ gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(100)
+convCheck:set_maximum_steps(2000)		-- more here for gs alternative
 convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-06)
-convCheck:set_verbose(true)
+convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(gmg)
+bicgstabSolver:set_preconditioner(gs)	-- or just gs
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -597,6 +609,7 @@ end
 -- end timeseries, produce gathering file
 out:write_time_pvd(fileName .. "result", u)
 
+--[[
 -- check if profiler is available
 if GetProfilerAvailable() == true then
     print("")
@@ -614,4 +627,4 @@ if GetProfilerAvailable() == true then
 else
     print("Profiler not available.")
 end 
-
+--]]
