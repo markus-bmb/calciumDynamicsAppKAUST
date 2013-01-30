@@ -152,23 +152,24 @@ end
 -- density correction factor (simulates larger surface area of ER caused by stacking etc.)
 dcf = 2.0
 
+
 -- project coordinates on dendritic length from soma (approx.)
 function dendLengthPos(x,y,z)
 	return (0.92*(x-2.2) +0.39*(y+10.5) -0.04*(z+1.2)) / 110.0
 end
 
 function IP3Rdensity(x,y,z,t,si)
-	local dens = dendLengthPos(x,y,z)
+	local dens = math.abs(dendLengthPos(x,y,z))
 	-- fourth order polynomial, distance to soma
 	dens = 1.4 -2.8*dens +6.6*math.pow(dens,2) -7.0*math.pow(dens,3) +2.8*math.pow(dens,4)
-	dens = dens * dcf * 17.3;
+	dens = dens * dcf * 17.3
 	-- cluster for branching points
 	if (si>=29 and si<=30) then dens = dens * 10 end 
 	return dens
 end
 
 function RYRdensity(x,y,z,t,si)
-	local dens = dendLengthPos(x,y,z)
+	local dens = math.abs(dendLengthPos(x,y,z))
 	-- fourth order polynomial, distance to soma
 	dens = 1.5 -3.5*dens +9.1*math.pow(dens,2) -10.5*math.pow(dens,3) +4.3*math.pow(dens,4)
 	dens = dens * dcf * 0.86; 
@@ -193,7 +194,6 @@ function SERCAdensity(x,y,z,t,si)
 end
 
 function LEAKERconstant(x,y,z,t,si)
-	local dens = dendLengthPos(x,y,z)
 	return dcf*3.4e-17
 end
 
@@ -229,7 +229,7 @@ function ourNeumannBndCA(x, y, z, t, si)
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
 	then efflux = -2e-4
 	else efflux = 0.0
-	end	
+	end
     return true, efflux
 end
 
@@ -597,7 +597,7 @@ solTimeSeries = SolutionTimeSeries()
 solTimeSeries:push(uOld, time)
 
 
-min_dt = timeStep / 2048.0
+min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
 lv = 0
 cb_counter = {}
@@ -675,7 +675,7 @@ end
 -- end timeseries, produce gathering file
 out:write_time_pvd(fileName .. "vtk/result", u)
 
-
+--[[
 -- check if profiler is available
 if GetProfilerAvailable() == true then
     print("")
@@ -693,3 +693,4 @@ if GetProfilerAvailable() == true then
 else
     print("Profiler not available.")
 end
+--]]
