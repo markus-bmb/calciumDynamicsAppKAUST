@@ -14,7 +14,8 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "rc19/rc19_amp_measZones.ugx"
+gridName = "rc19/rc19_amp_singleDend.ugx"
+--gridName = "rc19/rc19_amp_measZones.ugx"
 --gridName = "rc19/rc19_amp_new.ugx"
 --gridName = "rc19/rc19_amp.ugx"					-- deprecated
 --gridName = "rc19/RC19amp_ug4_finished.ugx"		-- dead
@@ -251,14 +252,18 @@ end
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
 neededSubsets = {}
-dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets)
+distributionMethod = "metisReweigh"
+weightingFct = InterSubsetEdgeWeighting()
+weightingFct:set_default_weights(1,1)
+weightingFct:set_indivisible_boundary_between_subsets(0, 1, 1000)
+dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
 ---[[
-print("Saving domain grid and hierarchy.")
-SaveDomain(dom, "refined_grid_p" .. GetProcessRank() .. ".ugx")
-SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. GetProcessRank() .. ".ugx", 2.0)
+--print("Saving domain grid and hierarchy.")
+--SaveDomain(dom, "refined_grid_p" .. GetProcessRank() .. ".ugx")
+--SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. GetProcessRank() .. ".ugx", 20.0)
 print("Saving parallel grid layout")
-SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..GetProcessRank()..".ugx", 2.0)
+SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..GetProcessRank()..".ugx", 20.0)
 --]]
 
 -- create approximation space
@@ -597,7 +602,7 @@ cb_interval = 10
 lv = 0
 cb_counter = {}
 cb_counter[0] = 0
-while (time-endTime) < 0.001*dt do
+while endTime-time > 0.001*dt do
 	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
 	
 	-- setup time Disc for old solutions and timestep
