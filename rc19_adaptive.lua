@@ -253,9 +253,9 @@ end
 print("create, refine and distribute domain")
 neededSubsets = {}
 distributionMethod = "metisReweigh"
-weightingFct = InterSubsetEdgeWeighting()
+weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
-weightingFct:set_indivisible_boundary_between_subsets(0, 1, 1000)
+weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
 ---[[
