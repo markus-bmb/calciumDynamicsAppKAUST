@@ -164,7 +164,7 @@ function IP3Rdensity(x,y,z,t,si)
 	dens = 1.4 -2.8*dens +6.6*math.pow(dens,2) -7.0*math.pow(dens,3) +2.8*math.pow(dens,4)
 	dens = dens * dcf * 17.3
 	-- cluster for branching points
-	if (si>=29 and si<=30) then dens = dens * 10 end 
+	if (si==38 or si==40) then dens = dens * 10 end 
 	return dens
 end
 
@@ -198,15 +198,15 @@ function LEAKERconstant(x,y,z,t,si)
 end
 
 function PMCAdensity(x,y,z,t,si)
-	return 100.0
+	return 200.0
 end
 
 function NCXdensity(x,y,z,t,si)
-	return 3.0
+	return 6.0
 end
 
 function LEAKPMconstant(x,y,z,t,si)
-	return 6.8e-22
+	return 1.37e-21
 end
 
 
@@ -290,11 +290,11 @@ end
 plMem = plMem .. synapses
 
 erMem = "mem_er"
-branches = ""
-for i=1,2 do
-	branches = branches .. ", branch" .. i
+measZonesERM = "measZoneERM"..1
+for i=2,15 do
+	measZonesERM = measZonesERM .. ", measZoneERM" .. i
 end
-erMem = erMem .. branches
+erMem = erMem .. ", " .. measZonesERM
 
 outerDomain = cytVol .. ", " .. nucVol .. ", " .. nucMem .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
@@ -522,12 +522,12 @@ gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(2000)		-- more here for gs alternative
+convCheck:set_maximum_steps(4000)		-- more here for gs alternative
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-06)
+convCheck:set_reduction(1e-08)
 convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(gs)	-- or just gs
+bicgstabSolver:set_preconditioner(ilu)	-- or just gs/ilu...
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -536,7 +536,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- convergence check
 newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace)
 newtonConvCheck:set_functions("")
-newtonConvCheck:set_maximum_steps(10)
+newtonConvCheck:set_maximum_steps(15)
 newtonConvCheck:set_minimum_defect({}, 1e-18)
 newtonConvCheck:set_reduction({}, 1e-08)
 newtonConvCheck:set_verbose(true)
@@ -549,10 +549,15 @@ newtonConvCheck:set_reduction(1e-08)
 newtonConvCheck:set_verbose(true)
 --]]
 
+newtonLineSearch = StandardLineSearch()
+newtonLineSearch:set_accept_best(true)
+newtonLineSearch:set_verbose(false)
+
 -- Newton solver
 newtonSolver = NewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
+newtonSolver:set_line_search(newtonLineSearch)
 
 newtonSolver:init(op)
 
@@ -582,10 +587,8 @@ fileName = "rc19/"
 print("Writing start values")
 out = VTKOutput()
 out:print(fileName .. "vtk/result", u, step, time)
-takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "meas/nuc")
-for i=1,15 do
-	takeMeasurement(u, approxSpace, time, "measZone"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
-end
+takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
 
@@ -649,10 +652,8 @@ while endTime-time > 0.001*dt do
 		-- take measurement in nucleus every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
-			takeMeasurement(u, approxSpace, time, "nuc", "ca_cyt", fileName .. "meas/nuc")
-			for i=1,15 do
-				takeMeasurement(u, approxSpace, time, "measZone"..i, "ca_cyt, ip3, clb", fileName .. "meas/meas"..i)
-			end
+			takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+			takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 		--end
 				
 		-- export solution of ca on mem_er
