@@ -14,7 +14,8 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "rc19/rc19_amp_singleDend.ugx"
+gridName = "rc19/rc19amp.ugx"
+--gridName = "rc19/rc19_amp_singleDend.ugx"
 --gridName = "rc19/rc19_amp_measZones.ugx"
 --gridName = "rc19/rc19_amp_new.ugx"
 --gridName = "rc19/rc19_amp.ugx"					-- deprecated
@@ -27,9 +28,21 @@ numPreRefs = util.GetParamNumber("-numPreRefs", 0)
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs",    0)
 
--- choose length of time step
+-- choose length of maximal time step during the whole simulation
 timeStep = util.GetParamNumber("-tstep", 0.01)
 
+-- choose length of time step at the beginning
+-- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
+timeStepStart = util.GetParamNumber("-tstepStart", timeStep)
+function log2(x)
+	return math.log(x)/math.log(2)
+end
+timeStepStartNew = timeStep * math.pow(2, math.floor(log2(timeStepStart/timeStep)))
+if (math.abs(timeStepStartNew-timeStepStart)/timeStepStart > 1e-5) then 
+	print("timeStepStart argument ("..timeStepStart..") was not admissible; taking "..timeStepStartNew.." instead.")
+end
+timeStepStart = timeStepStartNew
+	
 -- choose end time
 endTime = util.GetParamNumber("-endTime")
 if (endTime == nil)
@@ -41,6 +54,22 @@ end
 
 -- chose plotting interval
 plotStep = util.GetParamNumber("-pstep", 0.01)
+
+
+-- choose order of synaptic activity
+order = util.GetParamNumber("-synOrder", 0)
+
+-- choose time between synaptic stimulations (in ms)
+jump = util.GetParamNumber("-jumpTime", 4)
+
+-- choose outfile directory
+fileName = util.GetParam("-outName", "rc19test")
+fileName = fileName.."/"
+
+-- whether to generate vtk output (0: no)
+vtk = util.GetParamNumber("-vtk", 0)
+generateVTKoutput = (vtk ~= 0)
+
 
 ---------------
 -- constants --
@@ -155,7 +184,7 @@ dcf = 2.0
 
 -- project coordinates on dendritic length from soma (approx.)
 function dendLengthPos(x,y,z)
-	return (0.92*(x-2.2) +0.39*(y+10.5) -0.04*(z+1.2)) / 110.0
+	return (0.91*(x-1.35) +0.40*(y+6.4) -0.04*(z+2.9)) / 111.0
 end
 
 function IP3Rdensity(x,y,z,t,si)
@@ -164,7 +193,7 @@ function IP3Rdensity(x,y,z,t,si)
 	dens = 1.4 -2.8*dens +6.6*math.pow(dens,2) -7.0*math.pow(dens,3) +2.8*math.pow(dens,4)
 	dens = dens * dcf * 17.3
 	-- cluster for branching points
-	if (si==38 or si==40) then dens = dens * 10 end 
+	if (si==22 or si==23 or si==24) then dens = dens * 10 end 
 	return dens
 end
 
@@ -198,15 +227,19 @@ function LEAKERconstant(x,y,z,t,si)
 end
 
 function PMCAdensity(x,y,z,t,si)
-	return 200.0
+	return 100.0
 end
 
 function NCXdensity(x,y,z,t,si)
-	return 6.0
+	return 3.0
+end
+
+function VGCCdensity(x,y,z,t,si)
+	return 0.1
 end
 
 function LEAKPMconstant(x,y,z,t,si)
-	return 1.37e-21
+	return 6.85e-22
 end
 
 
@@ -217,15 +250,22 @@ end
 
 -- firing pattern of the synapses
 syns = {}
-for i=6,13 do
-	syns["start"..i] = 0.005*(i-6)
-	syns["end"..i] = 0.005*(i-6)+0.01
+synStart = 6
+synStop = 13
+caEntryDuration = 0.01
+if (order==0) then
+	for i=synStart,synStop do
+		syns[i] = jump/1000.0*(i-synStart)
+	end
+else
+	for i=synStart,synStart+nSyn-1 do
+		syns[i] = jump/1000.0*(synStop-i)
+	end
 end
-
 
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si>=6 and si<=13 and syns["start"..si]<t and t<=syns["end"..si])
+	if 	(si>=6 and si<=13 and syns[si]<t and t<=syns[si]+caEntryDuration)
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
 	then efflux = -2e-4
 	else efflux = 0.0
@@ -238,9 +278,8 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
-	if 	(si>=6 and si<=13 and syns["start"..si]+ip3EntryDelay<t
-	     and t<=syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
+	if 	(si>=6 and si<=13 and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
+	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
 	else efflux = 0.0
 	end
     return true, efflux
@@ -258,7 +297,7 @@ weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
----[[
+--[[
 --print("Saving domain grid and hierarchy.")
 --SaveDomain(dom, "refined_grid_p" .. GetProcessRank() .. ".ugx")
 --SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. GetProcessRank() .. ".ugx", 20.0)
@@ -272,9 +311,9 @@ approxSpace = ApproximationSpace(dom)
 
 cytVol = "cyt"
 measZones = ""
-for i=1,15 do
-	measZones = measZones .. ", measZone" .. i
-end
+--for i=1,15 do
+--	measZones = measZones .. ", measZone" .. i
+--end
 cytVol = cytVol .. measZones
 
 nucVol = "nuc"
@@ -442,6 +481,12 @@ neumannDiscNCX:set_density_function("NCXdensity")
 neumannDiscLeak = FV1BoundaryPMLeak("", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
 
+neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
+		"neuronRes/timestep".."_order"..order.."_jump"..jump.."_", "%.3f", ".dat", false)
+neumannDiscVGCC:set_channel_type_N() --default, but to be sure
+neumannDiscVGCC:set_density_function("VGCCdensity")
+neumannDiscVGCC:init(0.0)
+voltageFilesInterval = 0.001;
 
 ------------------------------------------
 -- setup complete domain discretization --
@@ -466,6 +511,7 @@ domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
+domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
@@ -576,18 +622,17 @@ Interpolate(ClbStartValue, u, "clb", 0.0)
 
 
 -- timestep in seconds
-dt = timeStep
+dt = timeStepStart
 time = 0.0
 step = 0
 
--- filename
-fileName = "rc19/"
 
--- write start solution
-print("Writing start values")
-out = VTKOutput()
-out:print(fileName .. "vtk/result", u, step, time)
-takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+if (generateVTKoutput) then
+	out = VTKOutput()
+	out:print(fileName .. "vtk/result", u, step, time)
+end
+
+--takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
 takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
@@ -602,14 +647,20 @@ solTimeSeries:push(uOld, time)
 
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
-lv = 0
+startLv = log2(timeStep/timeStepStart)
+lv = startLv
+levelUpDelay = (synStop-synStart)*jump/1000.0 + caEntryDuration;
 cb_counter = {}
-cb_counter[0] = 0
+for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
 	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
 	
 	-- setup time Disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
+	
+	-- prepare BG channel state
+	vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
+	neumannDiscVGCC:update_gating(vm_time)
 	
 	-- prepare newton solver
 	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
@@ -637,7 +688,7 @@ while endTime-time > 0.001*dt do
 		
 		-- update check-back counter and if applicable, reset dt
 		cb_counter[lv] = cb_counter[lv] + 1
-		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 do
+		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
 			dt = 2*dt;
 			lv = lv - 1
 			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
@@ -645,14 +696,16 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- plot solution every plotStep seconds
-		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5
-		then out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+		if (generateVTKoutput) then
+			if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
+				out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+			end
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
-			takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+			--takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
 			takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 		--end
 				
@@ -674,7 +727,7 @@ while endTime-time > 0.001*dt do
 end
 
 -- end timeseries, produce gathering file
-out:write_time_pvd(fileName .. "vtk/result", u)
+if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
 
 --[[
 -- check if profiler is available
