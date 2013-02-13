@@ -37,7 +37,8 @@ timeStepStart = util.GetParamNumber("-tstepStart", timeStep)
 function log2(x)
 	return math.log(x)/math.log(2)
 end
-timeStepStartNew = timeStep * math.pow(2, math.floor(log2(timeStepStart/timeStep)))
+startLv =  math.ceil(log2(timeStep/timeStepStart))
+timeStepStartNew = timeStep / math.pow(2, startLv)
 if (math.abs(timeStepStartNew-timeStepStart)/timeStepStart > 1e-5) then 
 	print("timeStepStart argument ("..timeStepStart..") was not admissible; taking "..timeStepStartNew.." instead.")
 end
@@ -647,7 +648,6 @@ solTimeSeries:push(uOld, time)
 
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
-startLv = log2(timeStep/timeStepStart)
 lv = startLv
 levelUpDelay = (synStop-synStart)*jump/1000.0 + caEntryDuration;
 cb_counter = {}
