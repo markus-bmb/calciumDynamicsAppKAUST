@@ -259,7 +259,7 @@ if (order==0) then
 		syns[i] = jump/1000.0*(i-synStart)
 	end
 else
-	for i=synStart,synStart+nSyn-1 do
+	for i=synStart,synStop do
 		syns[i] = jump/1000.0*(synStop-i)
 	end
 end
