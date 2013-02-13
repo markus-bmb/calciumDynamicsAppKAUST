@@ -180,7 +180,7 @@ function ourDiffTensorClm(x, y, z, t)
 end
 
 -- density correction factor (simulates larger surface area of ER caused by stacking etc.)
-dcf = 2.0
+dcf = 1.0
 
 
 -- project coordinates on dendritic length from soma (approx.)
@@ -216,9 +216,9 @@ function SERCAdensity(x,y,z,t,si)
 	local j_ryr = 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
-	dens = 	  IP3Rdensity(x,y,z,t,si) * j_ip3r
-			+ RYRdensity(x,y,z,t,si) * j_ryr
-			+ LEAKERconstant(x,y,z,t,si) * j_leak
+	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
+				+ RYRdensity(x,y,z,t,si) * j_ryr
+				+ LEAKERconstant(x,y,z,t,si) * j_leak
 	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 	return dens
 end
@@ -228,19 +228,26 @@ function LEAKERconstant(x,y,z,t,si)
 end
 
 function PMCAdensity(x,y,z,t,si)
-	return 100.0
+	return 3000.0
 end
 
 function NCXdensity(x,y,z,t,si)
-	return 3.0
+	return 100.0
 end
 
 function VGCCdensity(x,y,z,t,si)
-	return 0.1
+	return 1.0
 end
 
 function LEAKPMconstant(x,y,z,t,si)
-	return 6.85e-22
+	local j_pmca = - 5.230769230769231e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
+	local j_ncx = - 5.4347826086956515e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
+	local j_vgcc = 1.5752042094823713e-23	-- single channel VGCC flux (mol/s) - to be determined via gdb
+	
+	local flux =  PMCAdensity(x,y,z,t,si) * j_pmca
+				+ NCXdensity(x,y,z,t,si) * j_ncx
+				+ VGCCdensity(x,y,z,t,si) * j_vgcc
+	return -flux -- 6.85e-22
 end
 
 
