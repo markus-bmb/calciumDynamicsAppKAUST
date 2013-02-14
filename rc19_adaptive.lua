@@ -590,7 +590,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- convergence check
 newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace)
 newtonConvCheck:set_functions("")
-newtonConvCheck:set_maximum_steps(15)
+newtonConvCheck:set_maximum_steps(10)
 newtonConvCheck:set_minimum_defect({}, 1e-18)
 newtonConvCheck:set_reduction({}, 1e-08)
 newtonConvCheck:set_verbose(true)
@@ -604,6 +604,7 @@ newtonConvCheck:set_verbose(true)
 --]]
 
 newtonLineSearch = StandardLineSearch()
+newtonLineSearch:set_maximum_steps(5)
 newtonLineSearch:set_accept_best(true)
 newtonLineSearch:set_verbose(false)
 
@@ -666,8 +667,11 @@ while endTime-time > 0.001*dt do
 	timeDisc:prepare_step(solTimeSeries, dt)
 	
 	-- prepare BG channel state
-	vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
-	neumannDiscVGCC:update_gating(vm_time)
+	if (time+dt<0.2) then
+		vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
+		neumannDiscVGCC:update_potential(vm_time)
+	end
+	neumannDiscVGCC:update_gating(time+dt)
 	
 	-- prepare newton solver
 	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
