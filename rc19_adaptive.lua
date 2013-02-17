@@ -681,16 +681,21 @@ while endTime-time > 0.001*dt do
 	then
 		-- in case of failure:
 		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
+		
+		-- correction for Borg-Graham channels: have to set back time
+		neumannDiscVGCC:update_gating(time)
+		
 		dt = dt/2
 		lv = lv + 1
 		VecScaleAssign(u, 1.0, solTimeSeries:latest())
+		
 		-- halve time step and try again unless time step below minimum
 		if dt < min_dt
 		then 
 			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
 			time = endTime
 		else
-			print ("Trying with half the time step...")
+			print ("Trying with half the time step " .. dt)
 			cb_counter[lv] = 0
 		end
 	else
