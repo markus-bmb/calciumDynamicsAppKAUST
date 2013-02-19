@@ -61,15 +61,14 @@ plotStep = util.GetParamNumber("-pstep", 0.01)
 order = util.GetParamNumber("-synOrder", 0)
 
 -- choose time between synaptic stimulations (in ms)
-jump = util.GetParamNumber("-jumpTime", 4)
+jump = util.GetParamNumber("-jumpTime", 5)
 
 -- choose outfile directory
 fileName = util.GetParam("-outName", "rc19test")
 fileName = fileName.."/"
 
--- whether to generate vtk output (0: no)
-vtk = util.GetParamNumber("-vtk", 0)
-generateVTKoutput = (vtk ~= 0)
+-- specify -vtk to generate vtk output
+generateVTKoutput = util.HasParamOption("-vtk")
 
 
 ---------------
@@ -490,7 +489,7 @@ neumannDiscLeak = FV1BoundaryPMLeak("", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
 
 neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
-		"neuronRes/timestep".."_order"..order.."_jump"..jump.."_", "%.3f", ".dat", false)
+		"neuronRes/timestep".."_order"..order.."_jump"..string.format("%1.1f",jump).."_", "%.3f", ".dat", false)
 neumannDiscVGCC:set_channel_type_N() --default, but to be sure
 neumannDiscVGCC:set_density_function("VGCCdensity")
 neumannDiscVGCC:init(0.0)
