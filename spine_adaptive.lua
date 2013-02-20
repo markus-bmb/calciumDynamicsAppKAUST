@@ -14,28 +14,68 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "spines/normSpine.ugx"
---gridName = "spines/movedApp.ugx"
---gridName = "spines/bigSpine.ugx"
---gridName = "spines/bigSpineMovedApp.ugx"
---gridName = "spines/bigSpineBigApp.ugx"
---gridName = "spines/bigSpineBigMovedApp.ugx"
---gridName = "spines/bigSpine_smallER_longDend_scaled.ugx"
-
--- refinements before distributing grid
-numPreRefs = util.GetParamNumber("-numPreRefs", 0)
+gridID = util.GetParam("-grid", "ns")
+if (gridID == "ns") then
+	gridName = "spines/normSpine.ugx"
+elseif (gridID == "ma") then
+	gridName = "spines/movedApp.ugx"
+elseif (gridID == "bs") then
+	gridName = "spines/bigSpine.ugx"
+elseif (gridID == "bsma") then
+	gridName = "spines/bigSpineMovedApp.ugx"
+elseif (gridID == "bsba") then
+	gridName = "spines/bigSpineBigApp.ugx"
+elseif (gridID == "bsbma") then
+	gridName = "spines/bigSpineBigMovedApp.ugx"
+elseif (gridID == "ld") then
+	gridName = "spines/longDend.ugx"
+else error("Unknown grid identifier" .. gridID)
+end	
 
 -- total refinements
-numRefs    = util.GetParamNumber("-numRefs",    0)
+numRefs = util.GetParamNumber("-numRefs",    0)
 
--- choose number of time steps
-nTimeSteps =  util.GetParamNumber("-nTimeSteps", 5)
+-- choose length of maximal time step during the whole simulation
+timeStep = util.GetParamNumber("-tstep", 0.01)
 
--- choose length of time step
-timeStep =  util.GetParamNumber("-tstep", 0.01)
+-- choose length of time step at the beginning
+-- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
+timeStepStart = util.GetParamNumber("-tstepStart", timeStep)
+function log2(x)
+	return math.log(x)/math.log(2)
+end
+startLv =  math.ceil(log2(timeStep/timeStepStart))
+timeStepStartNew = timeStep / math.pow(2, startLv)
+if (math.abs(timeStepStartNew-timeStepStart)/timeStepStart > 1e-5) then 
+	print("timeStepStart argument ("..timeStepStart..") was not admissible; taking "..timeStepStartNew.." instead.")
+end
+timeStepStart = timeStepStartNew
+	
+-- choose end time
+endTime = util.GetParamNumber("-endTime")
+if (endTime == nil)
+then
+	-- choose number of time steps
+	nTimeSteps = util.GetParamNumber("-nTimeSteps", 1)
+	endTime = nTimeSteps*timeStep
+end
 
 -- chose plotting interval
 plotStep = util.GetParamNumber("-pstep", 0.01)
+
+
+-- choose order of synaptic activity
+order = util.GetParamNumber("-synOrder", 0)
+
+-- choose time between synaptic stimulations (in ms)
+jump = util.GetParamNumber("-jumpTime", 5)
+
+-- choose outfile directory
+fileName = util.GetParam("-outName", "rc19test")
+fileName = fileName.."/"
+
+-- specify -vtk to generate vtk output
+generateVTKoutput = util.HasParamOption("-vtk")
 
 ---------------
 -- constants --
@@ -149,17 +189,78 @@ function ourRhs(x, y, z, t)
 end
 
 
--- firing pattern of the synapses
-syns = {}
-for i=9,9 do
-	syns["start"..i] = 0.005*(i-9)
-	syns["end"..i] = 0.005*(i-9)+0.01
+-- density correction factor (simulates larger surface area of ER caused by stacking etc.)
+dcf = 1.0
+
+
+function IP3Rdensity(x,y,z,t,si)
+	return dcf * 17.3
+end
+
+function RYRdensity(x,y,z,t,si)
+	-- no ryrs in spine apparatus membrane
+	if (si == 8) then return 0.0 end
+	return dcf * 0.86
+end
+
+-- this is a little bit more complicated, since it must be ensured that
+-- the net flux for equilibrium concentrations is zero
+-- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
+function SERCAdensity(x,y,z,t,si)
+	local v_s = 6.5e-27						-- V_S param of SERCA pump
+	local k_s = 1.8e-7						-- K_S param of SERCA pump
+	local j_ip3r = 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
+	
+	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
+				+ RYRdensity(x,y,z,t,si) * j_ryr
+				+ LEAKERconstant(x,y,z,t,si) * j_leak
+	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
+	return dens
+end
+
+function LEAKERconstant(x,y,z,t,si)
+	return dcf*3.4e-17
+end
+
+function PMCAdensity(x,y,z,t,si)
+	return 3000.0
+end
+
+function NCXdensity(x,y,z,t,si)
+	return 100.0
+end
+
+function VGCCdensity(x,y,z,t,si)
+	return 1.0
+end
+
+function LEAKPMconstant(x,y,z,t,si)
+	local j_pmca = - 5.230769230769231e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
+	local j_ncx = - 5.4347826086956515e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
+	local j_vgcc = 1.5752042094823713e-23	-- single channel VGCC flux (mol/s) - to be determined via gdb
+	
+	local flux =  PMCAdensity(x,y,z,t,si) * j_pmca
+				+ NCXdensity(x,y,z,t,si) * j_ncx
+				+ VGCCdensity(x,y,z,t,si) * j_vgcc
+	return -flux -- 6.85e-22
 end
 
 
+
+-- firing pattern of the synapse
+syns = {}
+synStart = 9
+synStop = 9
+caEntryDuration = 0.01
+for i=synStart,synStop do
+	syns[i] = 0.005*i-synStart
+end
+
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si==9 and syns["start"..si]<t and t<=syns["end"..si])
+	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
 	then efflux = -2e-4
 	else efflux = 0.0
@@ -168,64 +269,15 @@ function ourNeumannBndCA(x, y, z, t, si)
 end
 
 
--- burst of ip3 at active synapses (triangular, immediate)
+-- burst of ip3 at active synapse (triangular, immediate)
 ip3EntryDelay = 0.000
-ip3EntryDuration = 2.0
+ip3EntryDuration = 0.2
 function ourNeumannBndIP3(x, y, z, t, si)
-	if 	(si==9 and syns["start"..si]+ip3EntryDelay<t
-	     and t<=syns["start"..si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns["start"..si])/ip3EntryDuration)
+	if 	(si>=synStart and si<=synStop and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
+	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
 	else efflux = 0.0
 	end
     return true, efflux
-end
-
-
--- PMCA pumps (h2b variant)
-PMCA =
-{
-	Kd		= 6.0e-08,	-- mol*dm^-3 (Elwess et al.)
---  Kd		= 3.4e-07,	-- mol*dm^-3 (Graupner) 
-	maxFlux	= 1.7e-23,	-- mol*s^-1
-	density	= 3.0e03		-- µm^-2
-}
-
-function PMCAfluxDensity(caCyt)
-	local gatingFactor = 1.0 / (PMCA['Kd']*PMCA['Kd']/caCyt/caCyt + 1.0)
-	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
-	return PMCA['density'] * PMCA['maxFlux'] * gatingFactor * dimCorrFactor;
-end
-
-function PMCAfluxDensityDeriv(caCyt)
-	local d_gatingFactor = 2*PMCA['Kd']*PMCA['Kd']*caCyt / math.pow(PMCA['Kd']*PMCA['Kd'] + caCyt*caCyt, 2)
-	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
-	return PMCA['density'] * PMCA['maxFlux'] * d_gatingFactor * dimCorrFactor;
-end
-
--- NCX pumps
--- params according to Graupner et al.
-NCX =
-{
-	Kd		= 1.8e-06,	-- mol*dm^-3
-	maxFlux	= 2.5e-21,	-- mol*s^-1
-	density	= 1.0e02		-- µm^-2
-}
-	
-function NCXfluxDensity(caCyt)
-	local gatingFactor = 1.0 / (NCX['Kd']/caCyt + 1.0)
-	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
-	return NCX['density'] * NCX['maxFlux'] * gatingFactor * dimCorrFactor;
-end
-
-function NCXfluxDensityDeriv(caCyt)
-	local d_gatingFactor = NCX['Kd'] / ((NCX['Kd'] + caCyt) * (NCX['Kd'] + caCyt))
-	local dimCorrFactor = 1.0e15	-- for dimensional correction: to mol*µm^2*dm^-3*s^-1
-	return NCX['density'] * NCX['maxFlux'] * d_gatingFactor * dimCorrFactor;
-end
-
--- plasma membrane leakage
-function leakPM(x, y, z, t, si)
-	return true, 2.1e-20
 end
 
 -------------------------------
@@ -234,16 +286,41 @@ end
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
 neededSubsets = {}
-dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets)
+distributionMethod = "metisReweigh"
+weightingFct = InterSubsetPartitionWeighting()
+weightingFct:set_default_weights(1,1)
+weightingFct:set_inter_subset_weight(0, 1, 1000)
+dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
+--[[
+--print("Saving domain grid and hierarchy.")
+--SaveDomain(dom, "refined_grid_p" .. GetProcessRank() .. ".ugx")
+--SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. GetProcessRank() .. ".ugx", 2.0)
+print("Saving parallel grid layout")
+SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..GetProcessRank()..".ugx", 2.0)
+--]]
 
 -- create approximation space
 print("Create ApproximationSpace")
 approxSpace = ApproximationSpace(dom)
-innerDomain = "er, app, mem_er, mem_app"
-outerDomain = "cyt, head, neck, dend, mem_cyt, mem_er, mem_app"
-synapses = ", syn"
-outerDomain = outerDomain .. synapses
+
+cytVol = "cyt"
+measZones = "head, neck, dend"
+cytVol = cytVol .. ", " .. measZones
+
+erVol = "er, app"
+
+plMem = "mem_cyt, syn"
+
+erMem = "mem_er, mem_app"
+measZonesERM = "measZoneERM"..1
+for i=2,3 do
+	measZonesERM = measZonesERM .. ", measZoneERM" .. i
+end
+erMem = erMem .. ", " .. measZonesERM
+
+outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
+innerDomain = erVol .. ", " .. erMem
 
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
@@ -279,23 +356,6 @@ diffusionMatrixClm = LuaUserMatrix3d("ourDiffTensorClm")
 -- rhs setup
 rhs = LuaUserNumber3d("ourRhs")
 
--- Neumann setup (Neumann-0 represented by declaring nothing)
-neumannCA = LuaCondUserNumber3d("ourNeumannBndCA")
-neumannIP3 = LuaCondUserNumber3d("ourNeumannBndIP3")
-neumannPMCA = LuaUserFunctionNumber("PMCAfluxDensity", 1, false)
-	neumannPMCA:set_deriv(0, "PMCAfluxDensityDeriv")
-neumannNCX = LuaUserFunctionNumber("NCXfluxDensity", 1, false)
-	neumannNCX:set_deriv(0, "NCXfluxDensityDeriv")
-neumannLeak = LuaCondUserNumber3d("leakPM")
-
---[[
--- dirichlet setup
-	dirichlet = LuaCondUserNumber3d("ourDirichletBnd")
-	
--- dirichlet setup
-	membraneDirichlet = LuaCondUserNumber3d("membraneDirichletBnd")
---]]
-
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
@@ -308,19 +368,19 @@ elseif dim == 3 then
     upwind = NoUpwind3d()
 end
 
-elemDiscER = ConvectionDiffusion("ca_er", "er, app") 
+elemDiscER = ConvectionDiffusion("ca_er", erVol) 
 elemDiscER:set_disc_scheme("fv1")
 elemDiscER:set_diffusion(diffusionMatrixCAer)
 elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", "cyt, head, neck, dend")
+elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol)
 elemDiscCYT:set_disc_scheme("fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", "cyt, head, neck, dend")
+elemDiscIP3 = ConvectionDiffusion("ip3", cytVol)
 elemDiscIP3:set_disc_scheme("fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
@@ -328,7 +388,7 @@ elemDiscIP3:set_reaction(reactionTermIP3)
 elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
-elemDiscClb = ConvectionDiffusion("clb", "cyt, head, neck, dend")
+elemDiscClb = ConvectionDiffusion("clb", cytVol)
 elemDiscClb:set_disc_scheme("fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
@@ -350,7 +410,7 @@ elemDiscClb:set_upwind(upwind)
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
-elemDiscBuffering = FV1Buffer("cyt, head, neck, dend")	-- where buffering occurs
+elemDiscBuffering = FV1Buffer(cytVol)	-- where buffering occurs
 elemDiscBuffering:add_reaction(
 	"clb",						    -- the buffering substance
 	"ca_cyt",						-- the buffered substance
@@ -380,43 +440,38 @@ elemDiscBuffering_clm:add_reaction(
 
 -- We pass the function needed to evaluate the flux function here.
 -- The order, in which the discrete fcts are passed, is crucial!
-innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", "mem_er, mem_app")
-innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", "mem_er")
-innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", "mem_er, mem_app")
-innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", "mem_er, mem_app")
+innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", erMem)
+innerDiscIP3R:set_density_function("IP3Rdensity")
+innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", erMem)
+innerDiscRyR:set_density_function("RYRdensity")
+innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", erMem)
+innerDiscSERCA:set_density_function("SERCAdensity")
+innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", erMem)
+innerDiscLeak:set_density_function("LEAKERconstant")
 
 ------------------------------
 -- setup Neumann boundaries --
 ------------------------------
-neumannDiscCA = NeumannBoundary("cyt, head, neck, dend")
-neumannDiscCA:add(neumannCA, "ca_cyt", "mem_cyt" .. synapses)
+-- synaptic activity
+neumannDiscCA = NeumannBoundary(cytVol)
+neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", plMem)
+neumannDiscIP3 = NeumannBoundary(cytVol)
+neumannDiscIP3:add("ourNeumannBndIP3", "ip3", plMem)
 
---[[
-neumannPMCA:set_input(0, elemDiscCYT:value())
---neumannDiscCA:add(neumannPMCA, "ca_cyt", "mem_cyt" .. synapses)
-neumannNCX:set_input(0, elemDiscCYT:value())
---neumannDiscCA:add(neumannNCX, "ca_cyt", "mem_cyt" .. synapses)
-neumannDiscCA:add(neumannLeak, "ca_cyt", "mem_cyt" .. synapses)
---]]
-neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", "mem_cyt" .. synapses)
-neumannDiscNCX = FV1BoundaryNCX("ca_cyt", "mem_cyt" .. synapses)
-neumannDiscLeak = FV1BoundaryPMLeak("", "mem_cyt" .. synapses)
+-- plasme membrane transport systems
+neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", plMem)
+neumannDiscPMCA:set_density_function("PMCAdensity")
+neumannDiscNCX = FV1BoundaryNCX("ca_cyt", plMem)
+neumannDiscNCX:set_density_function("NCXdensity")
+neumannDiscLeak = FV1BoundaryPMLeak("", plMem)
+neumannDiscLeak:set_density_function("LEAKPMconstant")
 
-neumannDiscIP3 = NeumannBoundary("cyt, head, neck, dend")
-neumannDiscIP3:add(neumannIP3, "ip3", "mem_cyt" .. synapses)
-
---[[
------------------------------------------------------------------
---  Setup Dirichlet Boundary
------------------------------------------------------------------
-
-dirichletBND = DirichletBoundary()
-dirichletBND:add(dirichlet, "c", "Boundary, MembraneBnd")
-
-membraneDirichletBND = DirichletBoundary()
-membraneDirichletBND:add(membraneDirichlet, "c_membrane", "MembraneBnd")
-
---]]
+neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
+		"neuronRes/timestep".."_order"..order.."_jump"..string.format("%1.1f",jump).."_", "%.3f", ".dat", false)
+neumannDiscVGCC:set_channel_type_N() --default, but to be sure
+neumannDiscVGCC:set_density_function("VGCCdensity")
+neumannDiscVGCC:init(0.0)
+voltageFilesInterval = 0.001;
 
 ------------------------------------------
 -- setup complete domain discretization --
@@ -437,19 +492,17 @@ domainDisc:add(elemDiscBuffering)
 
 -- (outer) boundary conditions
 domainDisc:add(neumannDiscCA)
+domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
-domainDisc:add(neumannDiscIP3)
+domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
 domainDisc:add(innerDiscRyR)
 domainDisc:add(innerDiscSERCA)
 domainDisc:add(innerDiscLeak)
-
---domainDisc:add(dirichletBND)
---domainDisc:add(membraneDirichletBND)
 
 -------------------------------
 -- setup time discretization --
@@ -483,7 +536,7 @@ exactSolver = LU()
 baseConvCheck = ConvCheck()
 baseConvCheck:set_maximum_steps(1000)
 baseConvCheck:set_minimum_defect(1e-28)
-baseConvCheck:set_reduction(1e-2)
+baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
 base = LinearSolver()
 base:set_convergence_check(baseConvCheck)
@@ -500,12 +553,12 @@ gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(50)
+convCheck:set_maximum_steps(4000)		-- more here for gs alternative
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-06)
-convCheck:set_verbose(true)
+convCheck:set_reduction(1e-08)
+convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(gmg)
+bicgstabSolver:set_preconditioner(gs)	-- gmg or just gs/ilu...
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -527,10 +580,16 @@ newtonConvCheck:set_reduction(1e-08)
 newtonConvCheck:set_verbose(true)
 --]]
 
+newtonLineSearch = StandardLineSearch()
+newtonLineSearch:set_maximum_steps(5)
+newtonLineSearch:set_accept_best(true)
+newtonLineSearch:set_verbose(false)
+
 -- Newton solver
 newtonSolver = NewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
+newtonSolver:set_line_search(newtonLineSearch)
 
 newtonSolver:init(op)
 
@@ -549,31 +608,20 @@ Interpolate(ClbStartValue, u, "clb", 0.0)
 
 
 -- timestep in seconds
-dt = timeStep
+dt = timeStepStart
 time = 0.0
 step = 0
 
--- filename
-fileName = "normSpine/"
---fileName = "movedApp/"
---fileName = "bigSpine/"
---fileName = "bigSpineMovedApp/"
---fileName = "bigSpineBigApp/"
---fileName = "bigSpineBigMovedApp/"
---fileName = "bigSpine2/"
+if (generateVTKoutput) then
+	out = VTKOutput()
+	out:print(fileName .. "vtk/result", u, step, time)
+end
 
--- write start solution
-print("Writing start values")
-out = VTKOutput()
-out:print(fileName .. "result", u, step, time)
-takeMeasurement(u, approxSpace, time, "head", "ca_cyt", fileName .. "measurements_head")
-takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", fileName .. "measurements_neck")
-takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", fileName .. "measurements_dend")
---exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
+--takeMeasurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+--takeMeasurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/data")
+--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
--- some info output
-print( "   numPreRefs is   " .. numPreRefs ..     ",  numRefs is         " .. numRefs)
-print( "   nTimeSteps is " .. nTimeSteps)
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -582,14 +630,16 @@ uOld = u:clone()
 solTimeSeries = SolutionTimeSeries()
 solTimeSeries:push(uOld, time)
 
+computeVolume(approxSpace, "head, neck, app, syn, mem_er")
 
-min_dt = timeStep / 2048.0
+min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
-lv = 0
+lv = startLv
+levelUpDelay = (synStop-synStart)*jump/1000.0 + caEntryDuration;
 cb_counter = {}
-cb_counter[0] = 0
-while time < timeStep*nTimeSteps do
-	print("++++++ POINT IN TIME  " .. time+dt .. "s  BEGIN ++++++")
+for i=0,startLv do cb_counter[i]=0 end
+while endTime-time > 0.001*dt do
+	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
 	
 	-- setup time Disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
@@ -597,19 +647,31 @@ while time < timeStep*nTimeSteps do
 	-- prepare newton solver
 	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
 	
+	-- prepare BG channel state
+	if (time+dt<0.2) then
+		vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
+		neumannDiscVGCC:update_potential(vm_time)
+	end
+	neumannDiscVGCC:update_gating(time+dt)
+	
 	-- apply newton solver
 	if newtonSolver:apply(u) == false
 	then
 		-- in case of failure:
 		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
+		
+		-- correction for Borg-Graham channels: have to set back time
+		neumannDiscVGCC:update_gating(time)
+		
 		dt = dt/2
 		lv = lv + 1
 		VecScaleAssign(u, 1.0, solTimeSeries:latest())
+		
 		-- halve time step and try again unless time step below minimum
 		if dt < min_dt
 		then 
 			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
-			time = timeStep*nTimeSteps
+			time = endTime
 		else
 			print ("Trying with half the time step...")
 			cb_counter[lv] = 0
@@ -620,7 +682,8 @@ while time < timeStep*nTimeSteps do
 		
 		-- update check-back counter and if applicable, reset dt
 		cb_counter[lv] = cb_counter[lv] + 1
-		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 do
+		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
 			dt = 2*dt;
 			lv = lv - 1
 			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
@@ -628,20 +691,22 @@ while time < timeStep*nTimeSteps do
 		end
 		
 		-- plot solution every plotStep seconds
-		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5
-		then out:print(fileName .. "result", u, math.floor(time/plotStep+0.5), time)
+		if (generateVTKoutput) then
+			if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
+				out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+			end
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
-		takeMeasurement(u, approxSpace, time, "head", "ca_cyt", fileName.."measurements_head")
-		takeMeasurement(u, approxSpace, time, "neck", "ca_cyt", fileName.."measurements_neck")
-		takeMeasurement(u, approxSpace, time, "dend", "ca_cyt", fileName.."measurements_dend")
+		--takeMeasurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+		takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+		--takeMeasurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/app")
 		--end
 				
 		-- export solution of ca on mem_er
-		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", "solution/solution");
+		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
@@ -652,10 +717,30 @@ while time < timeStep*nTimeSteps do
 		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
 		solTimeSeries:push_discard_oldest(oldestSol, time)
 		
-		print("++++++ POINT IN TIME  " .. time .. "s  END ++++++++");
+		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
 	end
 
 end
 
 -- end timeseries, produce gathering file
-out:write_time_pvd(fileName .. "result", u)
+if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
+
+--[[
+-- check if profiler is available
+if GetProfilerAvailable() == true then
+    print("")
+    -- get node
+    pn = GetProfileNode("main")
+--    pn2 = GetProfileNode("GMG_lmgc")
+    -- check if node is valid
+    if pn:is_valid() then
+	    print(pn:call_tree(0.0))
+	    print(pn:groups())
+--        print(pn2:total_time_sorted())
+    else
+        print("main is not known to the profiler.")
+    end
+else
+    print("Profiler not available.")
+end
+--]]

@@ -178,6 +178,11 @@ function ourDiffTensorClm(x, y, z, t)
            0, 0, D_clm
 end
 
+function ourRhs(x, y, z, t)
+    return 0;
+end
+
+
 -- density correction factor (simulates larger surface area of ER caused by stacking etc.)
 dcf = 1.0
 
@@ -250,10 +255,6 @@ function LEAKPMconstant(x,y,z,t,si)
 end
 
 
-function ourRhs(x, y, z, t)
-    return 0;
-end
-
 
 -- firing pattern of the synapses
 syns = {}
@@ -272,7 +273,7 @@ end
 
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si>=6 and si<=13 and syns[si]<t and t<=syns[si]+caEntryDuration)
+	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
 	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
 	then efflux = -2e-4
 	else efflux = 0.0
@@ -285,7 +286,7 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
-	if 	(si>=6 and si<=13 and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
+	if 	(si>=synStart and si<=synStop and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
 	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
 	else efflux = 0.0
 	end
@@ -480,6 +481,7 @@ neumannDiscCA = NeumannBoundary("cyt")
 neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", plMem)
 neumannDiscIP3 = NeumannBoundary("cyt")
 neumannDiscIP3:add("ourNeumannBndIP3", "ip3", plMem)
+
 -- plasma membrane transport systems
 neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", plMem)
 neumannDiscPMCA:set_density_function("PMCAdensity")
@@ -580,7 +582,7 @@ convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-08)
 convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(ilu)	-- or just gs/ilu...
+bicgstabSolver:set_preconditioner(gs)	-- gmg or just gs/ilu...
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -704,6 +706,7 @@ while endTime-time > 0.001*dt do
 		-- update check-back counter and if applicable, reset dt
 		cb_counter[lv] = cb_counter[lv] + 1
 		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
 			dt = 2*dt;
 			lv = lv - 1
 			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
@@ -717,7 +720,7 @@ while endTime-time > 0.001*dt do
 			end
 		end
 		
-		-- take measurement in nucleus every timeStep seconds 
+		-- take measurements every timeStep seconds 
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
 			--takeMeasurement(u, approxSpace, time, "nuc"..measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
