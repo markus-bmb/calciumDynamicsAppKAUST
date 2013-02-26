@@ -392,41 +392,35 @@ elseif dim == 3 then
     upwind = NoUpwind3d()
 end
 
-elemDiscER = ConvectionDiffusion("ca_er", erVol) 
-elemDiscER:set_disc_scheme("fv1")
+elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
 elemDiscER:set_diffusion(diffusionMatrixCAer)
 elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..", "..nucVol)
-elemDiscCYT:set_disc_scheme("fv1")
+elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..", "..nucVol, "fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..", "..nucVol)
-elemDiscIP3:set_disc_scheme("fv1")
+elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..", "..nucVol, "fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
 elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
-elemDiscClb = ConvectionDiffusion("clb", cytVol..", "..nucVol)
-elemDiscClb:set_disc_scheme("fv1")
+elemDiscClb = ConvectionDiffusion("clb", cytVol..", "..nucVol, "fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 --[[
-elemDiscClmC = ConvectionDiffusion("clm_c", cytVol..", "..nucVol)
-elemDiscClb:set_disc_scheme("fv1")
+elemDiscClmC = ConvectionDiffusion("clm_c", cytVol..", "..nucVol, "fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClm)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
-elemDiscClmN = ConvectionDiffusion("clm_n", cytVol..", "..nucVol)
-elemDiscClb:set_disc_scheme("fv1")
+elemDiscClmN = ConvectionDiffusion("clm_n", cytVol..", "..nucVol, "fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClm)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)

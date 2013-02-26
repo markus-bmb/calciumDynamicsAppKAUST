@@ -229,32 +229,27 @@ elseif dim == 3 then
     upwind = NoUpwind3d()
 end
 
-elemDiscER = ConvectionDiffusion("ca_er", "er") 
-elemDiscER:set_disc_scheme("fv1")
+elemDiscER = ConvectionDiffusion("ca_er", "er", "fv1") 
 elemDiscER:set_diffusion(diffusionMatrixCAer)
 elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", "cyt, nuc")
-elemDiscCYT:set_disc_scheme("fv1")
+elemDiscCYT = ConvectionDiffusion("ca_cyt", "cyt, nuc", "fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", "cyt, nuc")
-elemDiscIP3:set_disc_scheme("fv1")
+elemDiscIP3 = ConvectionDiffusion("ip3", "cyt, nuc", "fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
-elemDiscClmdC = ConvectionDiffusion("clmd_c", "cyt, nuc")
-elemDiscClmdC:set_disc_scheme("fv1")
+elemDiscClmdC = ConvectionDiffusion("clmd_c", "cyt, nuc", "fv1")
 elemDiscClmdC:set_diffusion(diffusionMatrixClmd)
 elemDiscClmdC:set_source(rhs)
 elemDiscClmdC:set_upwind(upwind)
 
-elemDiscClmdN = ConvectionDiffusion("clmd_n", "cyt, nuc")
-elemDiscClmdN:set_disc_scheme("fv1")
+elemDiscClmdN = ConvectionDiffusion("clmd_n", "cyt, nuc", "fv1")
 elemDiscClmdN:set_diffusion(diffusionMatrixClmd)
 elemDiscClmdN:set_source(rhs)
 elemDiscClmdN:set_upwind(upwind)
