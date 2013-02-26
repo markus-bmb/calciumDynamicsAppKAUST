@@ -216,8 +216,8 @@ end
 function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
-	local j_ryr = 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_ip3r = 2.7817352713488838e-23 -- 3.7606194166520605e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 4.6047720062808216e-22 -- 1.1204582669024472e-21	-- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
@@ -232,25 +232,29 @@ function LEAKERconstant(x,y,z,t,si)
 end
 
 function PMCAdensity(x,y,z,t,si)
-	return 3000.0
+	return 500.0
 end
 
 function NCXdensity(x,y,z,t,si)
-	return 100.0
+	return 15.0
 end
 
 function VGCCdensity(x,y,z,t,si)
-	return 1.0
+	return 5.0
 end
 
 function LEAKPMconstant(x,y,z,t,si)
-	local j_pmca = - 5.230769230769231e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
-	local j_ncx = - 5.4347826086956515e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
-	local j_vgcc = 1.5752042094823713e-23	-- single channel VGCC flux (mol/s) - to be determined via gdb
-	
+	local j_pmca = - 5.230769230769231e-24 -- - 6.9672131147540994e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
+	local j_ncx = - 5.4347826086956515e-23 -- - 6.7567567567567566e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
+	local j_vgcc = 1.5752042094823713e-25	-- single channel VGCC flux (mol/s) - to be determined via gdb
+		-- *1.5 // * 0.5 for L-type // T-type
+		--j_vgcc = j_vgcc*1.5;
 	local flux =  PMCAdensity(x,y,z,t,si) * j_pmca
 				+ NCXdensity(x,y,z,t,si) * j_ncx
 				+ VGCCdensity(x,y,z,t,si) * j_vgcc
+
+	if (-flux < 0) then error("PM leak flux is outward for these density settings!") end
+	
 	return -flux -- 6.85e-22
 end
 
@@ -486,7 +490,7 @@ neumannDiscLeak:set_density_function("LEAKPMconstant")
 
 neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
 		"neuronRes/timestep".."_order"..order.."_jump"..string.format("%1.1f",jump).."_", "%.3f", ".dat", false)
-neumannDiscVGCC:set_channel_type_N() --default, but to be sure
+neumannDiscVGCC:set_channel_type_L() --default, but to be sure
 neumannDiscVGCC:set_density_function("VGCCdensity")
 neumannDiscVGCC:init(0.0)
 voltageFilesInterval = 0.001;
@@ -576,7 +580,7 @@ convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-08)
 convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(gs)	-- gmg or just gs/ilu...
+bicgstabSolver:set_preconditioner(ilu)	-- gmg or just gs/ilu...
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
