@@ -237,7 +237,7 @@ function NCXdensity(x,y,z,t,si)
 end
 
 function VGCCdensity(x,y,z,t,si)
-	return 1.0
+	return 5.0
 end
 
 function LEAKPMconstant(x,y,z,t,si)
@@ -542,16 +542,16 @@ exactSolver = LU()
 -- geometric multi-grid --
 -- base solver
 baseConvCheck = ConvCheck()
-baseConvCheck:set_maximum_steps(100)
+baseConvCheck:set_maximum_steps(1000)
 baseConvCheck:set_minimum_defect(1e-28)
 baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
---[[
+---[[
 base = LinearSolver()
 base:set_convergence_check(baseConvCheck)
 base:set_preconditioner(gs)
 --]]
-base = exactSolver
+--base = exactSolver
 
 gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
@@ -565,12 +565,12 @@ gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(4000)		-- more here for gs alternative
+convCheck:set_maximum_steps(2000)		-- more here for gs alternative
 convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-08)
-convCheck:set_verbose(false)
+convCheck:set_verbose(true)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(gmg)	-- gmg or just gs/ilu...
+bicgstabSolver:set_preconditioner(gs)	-- gmg or just gs/ilu...
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -601,7 +601,7 @@ newtonLineSearch:set_verbose(false)
 newtonSolver = NewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
-newtonSolver:set_line_search(newtonLineSearch)
+--newtonSolver:set_line_search(newtonLineSearch)
 
 newtonSolver:init(op)
 
@@ -675,7 +675,7 @@ while endTime-time > 0.001*dt do
 		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
 		
 		-- correction for Borg-Graham channels: have to set back time
-		neumannDiscVGCC:update_gating(time)
+		--neumannDiscVGCC:update_gating(time)
 		
 		dt = dt/2
 		lv = lv + 1
