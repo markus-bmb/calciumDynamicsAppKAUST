@@ -282,10 +282,10 @@ innerDisc = FV1InnerBoundaryCalciumER("ca_cyt, ca_er, ip3", "mem_er")
 --  Setup Neumann Boundary
 -----------------------------------------------------------------
 
-neumannDiscCA = NeumannBoundary("cyt")
-neumannDiscCA:add(neumannCA, "ca_cyt", "mem_cyt" .. synapses)
-neumannDiscIP3 = NeumannBoundary("cyt")
-neumannDiscIP3:add(neumannIP3, "ip3", "mem_cyt" .. synapses)
+neumannDiscCA = NeumannBoundary("ca_cyt")
+neumannDiscCA:add(neumannCA, "mem_cyt" .. synapses, "cyt")
+neumannDiscIP3 = NeumannBoundary("ip3")
+neumannDiscIP3:add(neumannIP3, "mem_cyt" .. synapses, "cyt")
 
 
 --[[

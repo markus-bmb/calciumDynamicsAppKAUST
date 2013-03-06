@@ -475,10 +475,10 @@ innerDiscLeak:set_density_function("LEAKERconstant")
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
-neumannDiscCA = NeumannBoundary("cyt")
-neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", plMem)
-neumannDiscIP3 = NeumannBoundary("cyt")
-neumannDiscIP3:add("ourNeumannBndIP3", "ip3", plMem)
+neumannDiscCA = NeumannBoundary( "ca_cyt")
+neumannDiscCA:add("ourNeumannBndCA", plMem,"cyt")
+neumannDiscIP3 = NeumannBoundary("ip3")
+neumannDiscIP3:add("ourNeumannBndIP3", plMem, "cyt")
 
 -- plasma membrane transport systems
 neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", plMem)

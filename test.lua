@@ -174,8 +174,8 @@ elemDiscCYT:set_upwind(upwind)
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
-neumannDiscCA = NeumannBoundary("cyt")
-neumannDiscCA:add("ourNeumannBndCA", "ca_cyt", plMem)
+neumannDiscCA = NeumannBoundary("ca_cyt")
+neumannDiscCA:add("ourNeumannBndCA", plMem, "cyt")
 
 ------------------------------------------
 -- setup complete domain discretization --
