@@ -32,7 +32,7 @@ elseif (gridID == "bsbma") then
 	gridName = "spines/bigSpineBigMovedApp.ugx"
 elseif (gridID == "ld") then
 	gridName = "spines/longDend.ugx"
-else error("Unknown grid identifier" .. gridID)
+else error("Unknown grid identifier " .. gridID)
 end	
 
 -- total refinements
@@ -63,16 +63,22 @@ then
 	endTime = nTimeSteps*timeStep
 end
 
--- chose plotting interval
+-- choose plotting interval
 plotStep = util.GetParamNumber("-pstep", 0.01)
 
-
--- choose order of synaptic activity
-order = util.GetParamNumber("-synOrder", 0)
-
--- choose time between synaptic stimulations (in ms)
-jump = util.GetParamNumber("-jumpTime", 5)
-
+-- choose solver setup
+solverID = util.GetParam("-solver", "GS")
+solverID = string.upper(solverID)
+validSolverIDs = {}
+validSolverIDs["GMG-GS"] = 0;
+validSolverIDs["GMG-ILU"] = 0;
+validSolverIDs["GMG-LU"] = 0;
+validSolverIDs["GS"] = 0;
+validSolverIDs["ILU"] = 0;
+if (validSolverIDs[solverID] == nil) then
+    error("Unknown solver identifier " .. solverID)
+end
+ 
 -- choose outfile directory
 fileName = util.GetParam("-outName", "rc19test")
 fileName = fileName.."/"
@@ -237,7 +243,7 @@ function NCXdensity(x,y,z,t,si)
 end
 
 function VGCCdensity(x,y,z,t,si)
-	return 5.0
+	return 1.0
 end
 
 function LEAKPMconstant(x,y,z,t,si)
@@ -265,10 +271,10 @@ for i=synStart,synStop do
 end
 
 -- burst of calcium influx for active synapses (~1200 ions)
+freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
+nSpikes = 10   -- number of spikes	
 function ourNeumannBndCA(x, y, z, t, si)	
 	-- spike train
-	local freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
-	local nSpikes = 10   -- number of spikes
 	if (si>=synStart and si<=synStop and t <= syns[si] + caEntryDuration + (nSpikes - 1) * 1.0/freq) then
         t = t % (1.0/freq)
 	end --> now, treat like single spike
@@ -475,7 +481,7 @@ neumannDiscLeak = FV1BoundaryPMLeak("", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
 
 neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
-		"neuronRes/timestep".."_order"..order.."_jump"..string.format("%1.1f",jump).."_", "%.3f", ".dat", false)
+		"neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_", "%.3f", ".dat", false)
 neumannDiscVGCC:set_channel_type_L() --default, but to be sure
 neumannDiscVGCC:set_density_function("VGCCdensity")
 neumannDiscVGCC:init(0.0)
@@ -546,31 +552,51 @@ baseConvCheck:set_maximum_steps(1000)
 baseConvCheck:set_minimum_defect(1e-28)
 baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
----[[
-base = LinearSolver()
-base:set_convergence_check(baseConvCheck)
-base:set_preconditioner(gs)
---]]
---base = exactSolver
+
+if (solverID == "GMG-LU") then
+    base = exactSolver
+else
+    base = LinearSolver()
+    base:set_convergence_check(baseConvCheck)
+    if (solverID == "GMG-ILU") then
+        base:set_preconditioner(ilu)
+    else
+        base:set_preconditioner(gs)
+    end
+end
 
 gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
 gmg:set_base_level(0)
---gmg:set_parallel_base_solver(false)
+if (solverID == "GMG-LU") then
+    gmg:set_parallel_base_solver(false)
+end
 gmg:set_base_solver(base)
-gmg:set_smoother(gs)
+if (solverID == "GMG-ILU") then
+    gmg:set_smoother(ilu)
+else
+    gmg:set_smoother(ilu)
+end 
 gmg:set_cycle_type(1)
 gmg:set_num_presmooth(5)
 gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(2000)		-- more here for gs alternative
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-08)
+convCheck:set_reduction(1e-06)
 convCheck:set_verbose(true)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(gs)	-- gmg or just gs/ilu...
+if (solverID == "ILU") then
+    convCheck:set_maximum_steps(2000)
+    bicgstabSolver:set_preconditioner(ilu)
+elseif (solverID == "GS") then
+    convCheck:set_maximum_steps(2000)
+    bicgstabSolver:set_preconditioner(gs)
+else
+    convCheck:set_maximum_steps(100)
+    bicgstabSolver:set_preconditioner(gmg)
+end
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -584,13 +610,6 @@ newtonConvCheck:set_minimum_defect({}, 1e-18)
 newtonConvCheck:set_reduction({}, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:timeMeasurement(true)
---[[
-newtonConvCheck = ConvCheck()
-newtonConvCheck:set_maximum_steps(10)
-newtonConvCheck:set_minimum_defect(1e-18)
-newtonConvCheck:set_reduction(1e-08)
-newtonConvCheck:set_verbose(true)
---]]
 
 newtonLineSearch = StandardLineSearch()
 newtonLineSearch:set_maximum_steps(5)
@@ -647,7 +666,7 @@ computeVolume(approxSpace, "head, neck, app, syn, mem_er")
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
 lv = startLv
-levelUpDelay = (synStop-synStart)*jump/1000.0 + caEntryDuration;
+levelUpDelay = caEntryDuration + (nSpikes - 1) * 1.0/freq;
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
