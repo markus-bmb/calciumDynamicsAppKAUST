@@ -56,6 +56,18 @@ end
 -- chose plotting interval
 plotStep = util.GetParamNumber("-pstep", 0.01)
 
+-- choose solver setup
+solverID = util.GetParam("-solver", "GS")
+solverID = string.upper(solverID)
+validSolverIDs = {}
+validSolverIDs["GMG-GS"] = 0;
+validSolverIDs["GMG-ILU"] = 0;
+validSolverIDs["GMG-LU"] = 0;
+validSolverIDs["GS"] = 0;
+validSolverIDs["ILU"] = 0;
+if (validSolverIDs[solverID] == nil) then
+    error("Unknown solver identifier " .. solverID)
+end
 
 -- choose order of synaptic activity
 order = util.GetParamNumber("-synOrder", 0)
@@ -560,27 +572,51 @@ baseConvCheck:set_maximum_steps(1000)
 baseConvCheck:set_minimum_defect(1e-28)
 baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
-base = LinearSolver()
-base:set_convergence_check(baseConvCheck)
-base:set_preconditioner(gs)
+
+if (solverID == "GMG-LU") then
+    base = exactSolver
+else
+    base = LinearSolver()
+    base:set_convergence_check(baseConvCheck)
+    if (solverID == "GMG-ILU" or solverID == "ILU") then
+        base:set_preconditioner(ilu)
+    else
+        base:set_preconditioner(gs)
+    end
+end
 
 gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
 gmg:set_base_level(0)
+if (solverID == "GMG-LU") then
+    gmg:set_parallel_base_solver(false)
+end
 gmg:set_base_solver(base)
-gmg:set_smoother(gs)
+if (solverID == "GMG-ILU") then
+    gmg:set_smoother(base)
+else
+    gmg:set_smoother(gs)
+end 
 gmg:set_cycle_type(1)
-gmg:set_num_presmooth(3)
+gmg:set_num_presmooth(10)
 gmg:set_num_postsmooth(3)
 
 -- biCGstab --
 convCheck = ConvCheck()
-convCheck:set_maximum_steps(4000)		-- more here for gs alternative
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-08)
-convCheck:set_verbose(false)
+convCheck:set_reduction(1e-06)
+convCheck:set_verbose(true)
 bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(ilu)	-- gmg or just gs/ilu...
+if (solverID == "ILU") then
+    convCheck:set_maximum_steps(2000)
+    bicgstabSolver:set_preconditioner(ilu)
+elseif (solverID == "GS") then
+    convCheck:set_maximum_steps(2000)
+    bicgstabSolver:set_preconditioner(gs)
+else
+    convCheck:set_maximum_steps(100)
+    bicgstabSolver:set_preconditioner(gmg)
+end
 bicgstabSolver:set_convergence_check(convCheck)
 
 -----------------------
@@ -594,13 +630,6 @@ newtonConvCheck:set_minimum_defect({}, 1e-18)
 newtonConvCheck:set_reduction({}, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:timeMeasurement(true)
---[[
-newtonConvCheck = ConvCheck()
-newtonConvCheck:set_maximum_steps(20)
-newtonConvCheck:set_minimum_defect(1e-21)
-newtonConvCheck:set_reduction(1e-08)
-newtonConvCheck:set_verbose(true)
---]]
 
 newtonLineSearch = StandardLineSearch()
 newtonLineSearch:set_maximum_steps(5)
@@ -611,7 +640,7 @@ newtonLineSearch:set_verbose(false)
 newtonSolver = NewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
-newtonSolver:set_line_search(newtonLineSearch)
+--newtonSolver:set_line_search(newtonLineSearch)
 
 newtonSolver:init(op)
 
@@ -666,11 +695,13 @@ while endTime-time > 0.001*dt do
 	timeDisc:prepare_step(solTimeSeries, dt)
 	
 	-- prepare BG channel state
+	--[[
 	if (time+dt<0.2) then
 		vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
 		neumannDiscVGCC:update_potential(vm_time)
 	end
 	neumannDiscVGCC:update_gating(time+dt)
+	--]]
 	
 	-- prepare newton solver
 	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
@@ -682,7 +713,7 @@ while endTime-time > 0.001*dt do
 		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
 		
 		-- correction for Borg-Graham channels: have to set back time
-		neumannDiscVGCC:update_gating(time)
+		--neumannDiscVGCC:update_gating(time)
 		
 		dt = dt/2
 		lv = lv + 1

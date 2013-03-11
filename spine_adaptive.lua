@@ -553,6 +553,10 @@ baseConvCheck:set_minimum_defect(1e-28)
 baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
 
+-- debug writer
+dbgWriter = GridFunctionDebugWriter(approxSpace)
+dbgWriter:set_vtk_output(false)
+
 if (solverID == "GMG-LU") then
     base = exactSolver
 else
@@ -565,6 +569,7 @@ else
     end
 end
 
+-- gmg
 gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
 gmg:set_base_level(0)
@@ -580,6 +585,7 @@ end
 gmg:set_cycle_type(1)
 gmg:set_num_presmooth(5)
 gmg:set_num_postsmooth(3)
+--gmg:set_debug(dbgWriter)
 
 -- biCGstab --
 convCheck = ConvCheck()
@@ -757,23 +763,3 @@ end
 
 -- end timeseries, produce gathering file
 if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
-
---[[
--- check if profiler is available
-if GetProfilerAvailable() == true then
-    print("")
-    -- get node
-    pn = GetProfileNode("main")
---    pn2 = GetProfileNode("GMG_lmgc")
-    -- check if node is valid
-    if pn:is_valid() then
-	    print(pn:call_tree(0.0))
-	    print(pn:groups())
---        print(pn2:total_time_sorted())
-    else
-        print("main is not known to the profiler.")
-    end
-else
-    print("Profiler not available.")
-end
---]]
