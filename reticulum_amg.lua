@@ -332,11 +332,8 @@ bicgstabSolver:set_convergence_check(convCheck)
 -------------------------------------------
 
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace)
-newtonConvCheck:set_functions("ip3")
-newtonConvCheck:set_maximum_steps(20)
-newtonConvCheck:set_minimum_defect("1e-18", 1e-21)
-newtonConvCheck:set_reduction("1e-02", 1e-08)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 20, 1e-21, 1e-08)
+newtonConvCheck:set_component_check("ip3", 1e-18, 1e-02)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:timeMeasurement(true)
 
