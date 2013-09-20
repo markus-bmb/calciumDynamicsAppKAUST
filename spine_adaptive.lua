@@ -611,7 +611,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- convergence check
 newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
 newtonConvCheck:set_verbose(true)
-newtonConvCheck:timeMeasurement(true)
+newtonConvCheck:set_time_measurement(true)
 
 newtonLineSearch = StandardLineSearch()
 newtonLineSearch:set_maximum_steps(5)

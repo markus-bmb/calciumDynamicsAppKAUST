@@ -412,7 +412,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 20, 1e-20, 1e-08)
 newtonConvCheck:set_component_check("ip3", 1e-20, 1e-08)
 newtonConvCheck:set_verbose(true)
-newtonConvCheck:timeMeasurement(true)
+newtonConvCheck:set_time_measurement(true)
 --]]
 --[[
 newtonConvCheck = ConvCheck()
