@@ -477,7 +477,7 @@ neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", plMem)
 neumannDiscPMCA:set_density_function("PMCAdensity")
 neumannDiscNCX = FV1BoundaryNCX("ca_cyt", plMem)
 neumannDiscNCX:set_density_function("NCXdensity")
-neumannDiscLeak = FV1BoundaryPMLeak("", plMem)
+neumannDiscLeak = FV1BoundaryPMLeak("ca_cyt", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
 
 neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
