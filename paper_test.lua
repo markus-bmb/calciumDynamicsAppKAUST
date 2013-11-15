@@ -5,7 +5,7 @@
 ----------------------------------------------------------------
 
 -- for profiler output
-SetOutputProfileStats(true)
+SetOutputProfileStats(false)
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
@@ -18,6 +18,7 @@ InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
 gridName = "paper_test.ugx"
+--gridName = "minimal.ugx"
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs",    0)
