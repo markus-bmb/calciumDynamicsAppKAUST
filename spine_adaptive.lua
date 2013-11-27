@@ -574,7 +574,7 @@ gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
 gmg:set_base_level(0)
 if (solverID == "GMG-LU") then
-    gmg:set_parallel_base_solver(false)
+    gmg:set_gathered_base_solver_if_ambiguous(true)
 end
 gmg:set_base_solver(base)
 if (solverID == "GMG-ILU") then
