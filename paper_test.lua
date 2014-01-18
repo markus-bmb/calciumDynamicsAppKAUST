@@ -5,7 +5,7 @@
 ----------------------------------------------------------------
 
 -- for profiler output
-SetOutputProfileStats(false)
+SetOutputProfileStats(true)
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
@@ -157,7 +157,6 @@ end
 
 function RYRdensity(x,y,z,t,si)
 	-- no ryrs in spine apparatus membrane
-	if (si == 8) then return 0.0 end
 	return 0.86
 end
 
@@ -237,14 +236,14 @@ ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 corrFact = -10.4
 function ourNeumannBndIP3(x, y, z, t, si)
-	--[[
+	---[[
 	if 	(si==4 and t>syn_start+ip3EntryDelay and t<=syn_start+ip3EntryDelay+ip3EntryDuration)
 	then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syn_start)/ip3EntryDuration)
 	else efflux = 0.0
 	end
     return true, efflux
-    --]]
-    return true, 0.0
+	--]]
+	--return true, 0.0
 end
 
 -------------------------------
@@ -380,8 +379,10 @@ innerDiscLeak:set_density_function("LEAKERconstant")
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
-neumannDiscCA = NeumannBoundary("ca_cyt")
-neumannDiscCA:add("ourNeumannBndCA", plMem, cytVol)
+neumannDiscCA = FV1UserFluxBoundary("ca_cyt", plMem)
+neumannDiscCA.set_flux_function("ourNeumannBoundaryCA")
+--neumannDiscCA = NeumannBoundary("ca_cyt")
+--neumannDiscCA:add("ourNeumannBndCA", plMem, cytVol)
 neumannDiscIP3 = NeumannBoundary("ip3")
 neumannDiscIP3:add("ourNeumannBndIP3", plMem, cytVol)
 
@@ -517,6 +518,7 @@ else
     bicgstabSolver:set_preconditioner(gmg)
 end
 bicgstabSolver:set_convergence_check(convCheck)
+--print(bicgstabSolver:config_string())
 
 -----------------------
 -- non linear solver --
@@ -584,10 +586,10 @@ for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
 	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
 	
-	-- setup time Disc for old solutions and timestep
+	-- setup time disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
 	
-	-- prepare newton solver
+	-- prepare Newton solver
 	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
 	
 	-- prepare BG channel state
@@ -599,7 +601,7 @@ while endTime-time > 0.001*dt do
 	neumannDiscVGCC:update_gating(time+dt)
 	--]]
 	
-	-- apply newton solver
+	-- apply Newton solver
 	if newtonSolver:apply(u) == false
 	then
 		-- in case of failure:
