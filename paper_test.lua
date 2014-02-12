@@ -260,10 +260,10 @@ dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distri
 
 --[[
 --print("Saving domain grid and hierarchy.")
---SaveDomain(dom, "refined_grid_p" .. GetProcessRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. GetProcessRank() .. ".ugx", 2.0)
+--SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
+--SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
 print("Saving parallel grid layout")
-SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..GetProcessRank()..".ugx", 2.0)
+SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
 -- create approximation space
