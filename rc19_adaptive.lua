@@ -65,6 +65,7 @@ validSolverIDs["GMG-ILU"] = 0;
 validSolverIDs["GMG-LU"] = 0;
 validSolverIDs["GS"] = 0;
 validSolverIDs["ILU"] = 0;
+validSolverIDs["JAC"] = 0;
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
@@ -613,6 +614,9 @@ if (solverID == "ILU") then
 elseif (solverID == "GS") then
     convCheck:set_maximum_steps(2000)
     bicgstabSolver:set_preconditioner(gs)
+elseif (solverID == "JAC") then
+    convCheck:set_maximum_steps(2000)
+    bicgstabSolver:set_preconditioner(jac)
 else
     convCheck:set_maximum_steps(100)
     bicgstabSolver:set_preconditioner(gmg)
