@@ -63,6 +63,7 @@ validSolverIDs = {}
 validSolverIDs["GMG-GS"] = 0;
 validSolverIDs["GMG-ILU"] = 0;
 validSolverIDs["GMG-LU"] = 0;
+validSolverIDs["GMG-BCGS"] = 0;
 validSolverIDs["GS"] = 0;
 validSolverIDs["ILU"] = 0;
 validSolverIDs["JAC"] = 0;
@@ -576,6 +577,10 @@ baseConvCheck:set_verbose(false)
 
 if (solverID == "GMG-LU") then
     base = exactSolver
+elseif (solverID == "GMG-BCGS") then
+	base = BiCGStab()
+	base:set_convergence_check(baseConvCheck)
+	base_set_preconditioner(gs)
 else
     base = LinearSolver()
     base:set_convergence_check(baseConvCheck)
@@ -594,7 +599,7 @@ if (solverID == "GMG-LU") then
 end
 gmg:set_base_solver(base)
 if (solverID == "GMG-ILU") then
-    gmg:set_smoother(base)
+    gmg:set_smoother(ilu)
 else
     gmg:set_smoother(gs)
 end 
