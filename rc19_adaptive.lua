@@ -580,7 +580,7 @@ if (solverID == "GMG-LU") then
 elseif (solverID == "GMG-BCGS") then
 	base = BiCGStab()
 	base:set_convergence_check(baseConvCheck)
-	base_set_preconditioner(gs)
+	base:set_preconditioner(gs)
 else
     base = LinearSolver()
     base:set_convergence_check(baseConvCheck)
