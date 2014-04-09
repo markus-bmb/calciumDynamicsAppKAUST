@@ -60,13 +60,14 @@ plotStep = util.GetParamNumber("-pstep", 0.01)
 solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
-validSolverIDs["GMG-GS"] = 0;
-validSolverIDs["GMG-ILU"] = 0;
-validSolverIDs["GMG-LU"] = 0;
-validSolverIDs["GMG-BCGS"] = 0;
-validSolverIDs["GS"] = 0;
-validSolverIDs["ILU"] = 0;
-validSolverIDs["JAC"] = 0;
+validSolverIDs["GMG-GS"] = 0
+validSolverIDs["GMG-ILU"] = 0
+validSolverIDs["GMG-LU"] = 0
+validSolverIDs["GMG-BCGS"] = 0
+validSolverIDs["AMG-LU"] = 0
+validSolverIDs["GS"] = 0
+validSolverIDs["ILU"] = 0
+validSolverIDs["JAC"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
@@ -575,7 +576,7 @@ baseConvCheck:set_minimum_defect(1e-28)
 baseConvCheck:set_reduction(1e-1)
 baseConvCheck:set_verbose(false)
 
-if (solverID == "GMG-LU") then
+if (solverID == "GMG-LU" or solverID == "AMG-LU") then
     base = exactSolver
 elseif (solverID == "GMG-BCGS") then
 	base = BiCGStab()
@@ -607,11 +608,23 @@ gmg:set_cycle_type(1)
 gmg:set_num_presmooth(10)
 gmg:set_num_postsmooth(3)
 
+
+-- AMG --
+amg = RSAMGPreconditioner()
+amg:set_num_presmooth(2)
+amg:set_num_postsmooth(2)
+amg:set_cycle_type(1)
+amg:set_presmoother(gs)
+amg:set_postsmoother(gs)
+amg:set_base_solver(base)
+--amg:set_debug(u)
+
+
 -- biCGstab --
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-06)
-convCheck:set_verbose(true)
+convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
 if (solverID == "ILU") then
     convCheck:set_maximum_steps(2000)
@@ -622,6 +635,9 @@ elseif (solverID == "GS") then
 elseif (solverID == "JAC") then
     convCheck:set_maximum_steps(2000)
     bicgstabSolver:set_preconditioner(jac)
+elseif (solverID == "AMG-LU") then
+    convCheck:set_maximum_steps(100)
+    bicgstabSolver:set_preconditioner(amg)
 else
     convCheck:set_maximum_steps(100)
     bicgstabSolver:set_preconditioner(gmg)
