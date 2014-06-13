@@ -330,7 +330,7 @@ elemDiscCYT:set_error_estimator(eeCaCyt)
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
---neumannDiscCA = FV1UserFluxBoundary("ca_cyt", plMem)
+--neumannDiscCA = UserFluxBoundaryFV1("ca_cyt", plMem)
 --neumannDiscCA:set_flux_function("ourNeumannBndCA")
 --neumannDiscCA:set_error_estimator(eeCaCyt)
 neumannDiscCA = NeumannBoundary("ca_cyt")

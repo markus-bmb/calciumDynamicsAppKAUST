@@ -257,7 +257,7 @@ elemDiscClmdN:set_upwind(upwind)
 -----------------------------------------------------------------
 --  Setup reaction terms of buffering
 -----------------------------------------------------------------
-elemDiscBuffering = FV1Buffer("cyt")	-- where buffering occurs
+elemDiscBuffering = BufferFV1("cyt")	-- where buffering occurs
 elemDiscBuffering:add_reaction(
 	"clmd_c",						-- the buffering substance
 	"ca_cyt",						-- the buffered substance

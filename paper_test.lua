@@ -223,7 +223,7 @@ function ourNeumannBndCA(x, y, z, t, si)
 	then efflux = -2e-4
 	else efflux = 0.0
 	end	
-    return efflux
+    return true, efflux
 end
 
 
@@ -360,7 +360,7 @@ elemDiscClb:set_error_estimator(eeClb)
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
-elemDiscBuffering = FV1Buffer(cytVol)	-- where buffering occurs
+elemDiscBuffering = BufferFV1(cytVol)	-- where buffering occurs
 elemDiscBuffering:add_reaction(
 	"clb",						    -- the buffering substance
 	"ca_cyt",						-- the buffered substance
@@ -382,16 +382,16 @@ elemDiscBuffering:set_error_estimator(eeBuffering)
 
 -- We pass the function needed to evaluate the flux function here.
 -- The order, in which the discrete fcts are passed, is crucial!
-innerDiscIP3R = FV1InnerBoundaryIP3R("ca_cyt, ca_er, ip3", erMem)
+innerDiscIP3R = TwoSidedIP3RFV1("ca_cyt, ca_er, ip3", erMem)
 innerDiscIP3R:set_density_function("IP3Rdensity")
 
-innerDiscRyR = FV1InnerBoundaryRyR("ca_cyt, ca_er", erMem)
+innerDiscRyR = TwoSidedRyRFV1("ca_cyt, ca_er", erMem)
 innerDiscRyR:set_density_function("RYRdensity")
 
-innerDiscSERCA = FV1InnerBoundarySERCA("ca_cyt, ca_er", erMem)
+innerDiscSERCA = TwoSidedSERCAFV1("ca_cyt, ca_er", erMem)
 innerDiscSERCA:set_density_function("SERCAdensity")
 
-innerDiscLeak = FV1InnerBoundaryERLeak("ca_cyt, ca_er", erMem)
+innerDiscLeak = TwoSidedERCalciumLeakFV1("ca_cyt, ca_er", erMem)
 innerDiscLeak:set_density_function("LEAKERconstant")
 
 -- error estimators
@@ -410,41 +410,43 @@ innerDiscLeak:set_error_estimator(eeERM)
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
-neumannDiscCA = FV1UserFluxBoundary("ca_cyt", plMem)
-neumannDiscCA:set_flux_function("ourNeumannBndCA")
---neumannDiscCA = NeumannBoundary("ca_cyt")
---neumannDiscCA:add("ourNeumannBndCA", plMem, cytVol)
-neumannDiscIP3 = FV1UserFluxBoundary("ip3", plMem)
+--neumannDiscCA = UserFluxBoundaryFV1("ca_cyt", plMem)
+--neumannDiscCA:set_flux_function("ourNeumannBndCA")
+neumannDiscCA = NeumannBoundary("ca_cyt")
+neumannDiscCA:add("ourNeumannBndCA", plMem, cytVol)
+neumannDiscIP3 = UserFluxBoundaryFV1("ip3", plMem)
 neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 --neumannDiscIP3 = NeumannBoundary("ip3")
 --neumannDiscIP3:add("ourNeumannBndIP3", plMem, cytVol)
 
----[[
+--[[
 eeNeumannCA = MultipleSideAndElemErrEstData()
 eeNeumannCA:add(eeCaCyt)
 eeNeumannCA:set_consider_me(false)
 neumannDiscCA:set_error_estimator(eeNeumannCA)
+--]]
+---[[
 eeNeumannIP3 = MultipleSideAndElemErrEstData()
 eeNeumannIP3:add(eeIP3)
 eeNeumannIP3:set_consider_me(false)
-neumannDiscCA:set_error_estimator(eeNeumannIP3)
+--neumannDiscCA:set_error_estimator(eeNeumannIP3)
 --]]
---neumannDiscCA:set_error_estimator(eeCaCyt)
+neumannDiscCA:set_error_estimator(eeCaCyt)
 --neumannDiscIP3:set_error_estimator(eeIP3)
 
 
 
 -- plasme membrane transport systems
-neumannDiscPMCA = FV1BoundaryPMCA("ca_cyt", plMem)
+neumannDiscPMCA = OneSidedPMCAFV1("ca_cyt", plMem)
 neumannDiscPMCA:set_density_function("PMCAdensity")
 
-neumannDiscNCX = FV1BoundaryNCX("ca_cyt", plMem)
+neumannDiscNCX = OneSidedNCXFV1("ca_cyt", plMem)
 neumannDiscNCX:set_density_function("NCXdensity")
 
-neumannDiscLeak = FV1BoundaryPMLeak("ca_cyt", plMem)
+neumannDiscLeak = OneSidedPMCalciumLeakFV1("ca_cyt", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
 
-neumannDiscVGCC = FV1BorgGrahamWithVM2UG("ca_cyt", plMem, approxSpace,
+neumannDiscVGCC = OneSidedBorgGrahamFV1WithVM2UG("ca_cyt", plMem, approxSpace,
 		"neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_", "%.3f", ".dat", false)
 neumannDiscVGCC:set_channel_type_L() --default, but to be sure
 neumannDiscVGCC:set_density_function("VGCCdensity")
