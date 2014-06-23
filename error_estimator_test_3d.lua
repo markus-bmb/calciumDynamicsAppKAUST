@@ -17,7 +17,7 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "paper_test_ref.ugx"
+gridName = "paper_test.ugx"
 --gridName = "minimal.ugx"
 
 -- total refinements
@@ -346,6 +346,17 @@ elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
+-- error estimators
+eeCaCyt = SideAndElemErrEstData(2,2)
+eeCaER 	= SideAndElemErrEstData(2,2)
+eeIP3 	= SideAndElemErrEstData(2,2)
+eeClb 	= SideAndElemErrEstData(2,2)
+
+elemDiscER:set_error_estimator(eeCaER)
+elemDiscCYT:set_error_estimator(eeCaCyt)
+elemDiscIP3:set_error_estimator(eeIP3)
+elemDiscClb:set_error_estimator(eeClb)
+
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
@@ -356,6 +367,14 @@ elemDiscBuffering:add_reaction(
 	totalClb,						-- total amount of buffer
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
+
+-- error estimator
+eeBuffering = MultipleSideAndElemErrEstData()
+eeBuffering:add(eeClb)
+eeBuffering:add(eeCaCyt)
+eeBuffering:set_consider_me(false)
+
+elemDiscBuffering:set_error_estimator(eeBuffering)
 
 ----------------------------------------------------
 -- setup inner boundary (channels on ER membrane) --
@@ -375,6 +394,18 @@ innerDiscSERCA:set_density_function("SERCAdensity")
 innerDiscLeak = TwoSidedERCalciumLeakFV1("ca_cyt, ca_er", erMem)
 innerDiscLeak:set_density_function("LEAKERconstant")
 
+-- error estimators
+eeERM = MultipleSideAndElemErrEstData()
+eeERM:add(eeCaCyt)
+eeERM:add(eeCaER)
+eeERM:add(eeIP3)
+eeERM:set_consider_me(false)
+
+innerDiscIP3R:set_error_estimator(eeERM)
+innerDiscRyR:set_error_estimator(eeERM)
+innerDiscSERCA:set_error_estimator(eeERM)
+innerDiscLeak:set_error_estimator(eeERM)
+
 ------------------------------
 -- setup Neumann boundaries --
 ------------------------------
@@ -387,6 +418,23 @@ neumannDiscIP3 = UserFluxBoundaryFV1("ip3", plMem)
 neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 --neumannDiscIP3 = NeumannBoundary("ip3")
 --neumannDiscIP3:add("ourNeumannBndIP3", plMem, cytVol)
+
+---[[
+eeNeumannCA = MultipleSideAndElemErrEstData()
+eeNeumannCA:add(eeCaCyt)
+eeNeumannCA:set_consider_me(false)
+neumannDiscCA:set_error_estimator(eeNeumannCA)
+--]]
+---[[
+eeNeumannIP3 = MultipleSideAndElemErrEstData()
+eeNeumannIP3:add(eeIP3)
+eeNeumannIP3:set_consider_me(false)
+neumannDiscIP3:set_error_estimator(eeNeumannIP3)
+--]]
+--neumannDiscCA:set_error_estimator(eeCaCyt)
+--neumannDiscIP3:set_error_estimator(eeIP3)
+
+
 
 -- plasme membrane transport systems
 neumannDiscPMCA = OneSidedPMCAFV1("ca_cyt", plMem)
@@ -405,6 +453,17 @@ neumannDiscVGCC:set_density_function("VGCCdensity")
 neumannDiscVGCC:init(0.0)
 
 voltageFilesInterval = 0.001;
+
+-- error estimators
+eePM = MultipleSideAndElemErrEstData()
+eePM:add(eeCaCyt)
+eePM:set_consider_me(false)
+
+
+neumannDiscPMCA:set_error_estimator(eePM)
+neumannDiscNCX:set_error_estimator(eePM)
+neumannDiscLeak:set_error_estimator(eePM)
+neumannDiscVGCC:set_error_estimator(eePM)
 
 ------------------------------------------
 -- setup complete domain discretization --
@@ -426,17 +485,21 @@ domainDisc:add(elemDiscBuffering)
 -- (outer) boundary conditions
 domainDisc:add(neumannDiscCA)
 domainDisc:add(neumannDiscIP3)
-
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
-domainDisc:add(neumannDiscVGCC)
+--domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
 domainDisc:add(innerDiscRyR)
 domainDisc:add(innerDiscSERCA)
 domainDisc:add(innerDiscLeak)
+
+
+-- constraints for adatptivity
+domainDisc:add(OneSideP1Constraints())
+
 
 -------------------------------
 -- setup time discretization --
@@ -502,6 +565,7 @@ if (solverID == "GMG-ILU") then
 else
     gmg:set_smoother(ilu)
 end 
+gmg:set_rap(false)
 gmg:set_cycle_type(1)
 gmg:set_num_presmooth(5)
 gmg:set_num_postsmooth(3)
@@ -571,6 +635,23 @@ if (generateVTKoutput) then
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
+-- refiner setup
+refiner = HangingNodeDomainRefiner(dom)
+TOL = 4e-14
+refineFrac = 0.01
+coarseFrac = 0.9
+maxLevel = 6
+maxElem = 50000
+
+
+outRefinement = VTKOutput()
+approxSpace_vtk = ApproximationSpace(dom)
+approxSpace_vtk:add_fct("eta_squared", "piecewise-constant");
+u_vtk = GridFunction(approxSpace_vtk)
+out_error = VTKOutput()
+out_error:clear_selection()
+out_error:select_all(false)
+out_error:select_element("eta_squared", "error")
 
 takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
@@ -582,7 +663,12 @@ uOld = u:clone()
 solTimeSeries = SolutionTimeSeries()
 solTimeSeries:push(uOld, time)
 
-computeVolume(approxSpace, "cyt, er, mem_cyt, syn, mem_er")
+--computeVolume(approxSpace, "cyt, er, mem_cyt, syn, mem_er")
+
+-- set indicators for refinement in space and time to 0
+space_refine_ind = 0.0
+time_refine_ind = 0.0
+
 
 newTime = true
 min_dt = timeStep / math.pow(2,15)
@@ -592,7 +678,12 @@ levelUpDelay = caEntryDuration + (nSpikes - 1) * 1.0/freq;
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
-	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
+	if newTime then
+		print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
+		newTime = false
+		numCoarsenOld = -1.0;
+		n=0
+	end
 	
 	-- setup time disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
@@ -610,66 +701,192 @@ while endTime-time > 0.001*dt do
 	--]]
 	
 	-- apply Newton solver
-	if newtonSolver:apply(u) == false
-	then
-		-- in case of failure:
+	newton_fail = false
+	error_fail = false
+	
+	if newtonSolver:apply(u) == false then
+		-- in case of Newton convergence failure:
+		newton_fail = true
 		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
+	else
+		-- check error
+		-- timeDisc:mark_error(new solution, refiner, tolerance for total squared l2 error,
+		--					   refinement fraction of max error, coarsening fraction (-1) of min error,
+		--					   max #refinements)
+		timeDisc:calc_error(u, u_vtk)
+		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
+			out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
+		end
 		
-		-- correction for Borg-Graham channels: have to set back time
-		--neumannDiscVGCC:update_gating(time)
+		changedGrid = false
 		
-		dt = dt/2
-		lv = lv + 1
-		VecScaleAssign(u, 1.0, solTimeSeries:latest())
-		
-		-- halve time step and try again unless time step below minimum
-		if dt < min_dt
-		then 
-			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
-			time = endTime
+		-- refining
+		timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+		if refiner:num_marked_elements() > 0 then
+			error_fail = true
+			print ("Error estimator is above required error.")
+		end
+	end
+	
+	if (error_fail or newton_fail)
+	then
+		print ("refinement score (time/space): " .. time_refine_ind .." / " .. space_refine_ind)
+		if (time_refine_ind > space_refine_ind or not timeDisc:is_error_valid())
+		then
+			-- TIME STEP ADJUSTMENT ------------------------------------------------
+			
+			-- clear marks in the case where they might have been set (no newton_fail)
+			refiner:clear_marks()
+			
+			-- correction for Borg-Graham channels: have to set back time
+			--neumannDiscVGCC:update_gating(time)
+			
+			dt = dt/2
+			lv = lv + 1
+			VecScaleAssign(u, 1.0, solTimeSeries:latest())
+			
+			-- error is invalid, since time step has changed
+			timeDisc:invalidate_error()
+			
+			-- halve time step and try again unless time step below minimum
+			if dt < min_dt
+			then 
+				print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
+				time = endTime
+			else
+				print ("Retrying with half the time step...")
+				cb_counter[lv] = 0
+			end
+			-------------------------------------------------------------------
+			time_refine_ind = time_refine_ind / 2
 		else
-			print ("Trying with half the time step...")
-			cb_counter[lv] = 0
+			-- GRID REFINEMENT ------------------------------------------------
+		
+			-- if too many elements: 
+			numElemBeforeRefinement = dom:domain_info():num_elements()
+			if (numElemBeforeRefinement > maxElem) then
+				print ("Adaptive refinement failed - too many elements. Aborting.")
+				print ("Failed at point in time " .. time .. ".")
+				time = endTime
+			else
+				if newton_fail then
+					timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+				end
+				adaptTolerance = 1.0;
+				while (refiner:num_marked_elements() == 0) do
+					adaptTolerance = adaptTolerance*0.1
+					timeDisc:mark_for_refinement(refiner, TOL*adaptTolerance, refineFrac, maxLevel)
+				end
+				refiner:refine()
+				refiner:clear_marks()
+				
+				if (adaptTolerance < 1.0) then
+					print ("Adaptive refinement tolerance has temporarily been reduced to "
+						   .. TOL*adaptTolerance .. " in order to mark elements for refinement.")
+				end
+				
+				numElemAfterRefinement = dom:domain_info():num_elements()
+				space_refine_ind = space_refine_ind * numElemBeforeRefinement / numElemAfterRefinement;
+				
+				-- error is invalid, since grid has changed
+				timeDisc:invalidate_error()
+				
+				--SaveDomain(dom, "refined_grid_".. math.floor((time+dt)/dt+0.5)*dt .. "_" .. n ..".ugx")
+				n = n+1
+				
+				-- solve again on adapted grid
+				VecScaleAssign(u, 1.0, solTimeSeries:latest())
+				
+				print ("Retrying with refined grid...")
+			end
+			-------------------------------------------------------------------
 		end
 	else
-		-- update new time
-		time = solTimeSeries:time(0) + dt
+		-- GRID COARSENING ------------------------------------------------
 		
-		-- update check-back counter and if applicable, reset dt
-		cb_counter[lv] = cb_counter[lv] + 1
-		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
-			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
-			dt = 2*dt;
-			lv = lv - 1
-			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
-			cb_counter[lv+1] = 0
+		timeDisc:mark_for_coarsening(refiner, TOL, coarseFrac, maxLevel)
+		numElemBeforeCoarsening = dom:domain_info():num_elements()
+		numCoarsenNew = refiner:num_marked_elements()
+		if numCoarsenNew > 0
+		   and (numCoarsenNew < 0.8*numCoarsenOld or numCoarsenOld < 0)
+		   and numCoarsenNew >= numElemBeforeCoarsening/10 then
+			refiner:coarsen()
+			numCoarsenOld = numCoarsenNew
 		end
+		numElemAfterCoarsening = dom:domain_info():num_elements()
 		
-		-- plot solution every plotStep seconds
-		if (generateVTKoutput) then
-			if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-				out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
-			end
-		end
+		refiner:clear_marks()
 		
-		-- take measurement in nucleus every timeStep seconds 
-		takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
-		
-		-- export solution of ca on mem_er
-		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
-		
-		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
-	
-		-- get oldest solution
-		oldestSol = solTimeSeries:oldest()
+		-- grid is changed iff number of elements is different than before
+		if (numElemAfterCoarsening ~= numElemBeforeCoarsening) then
+			space_refine_ind = space_refine_ind * numElemBeforeCoarsening / numElemAfterCoarsening;
 			
-		-- copy values into oldest solution (we reuse the memory here)
-		VecScaleAssign(oldestSol, 1.0, u)
+			-- error is invalid, since grid has changed
+			timeDisc:invalidate_error()
+			
+			--SaveDomain(dom, "refined_grid_".. math.floor((time+dt)/dt+0.5)*dt .. "_" .. n ..".ugx")
+			n = n+1
+			
+			-- solve again on adapted grid
+			VecScaleAssign(u, 1.0, solTimeSeries:latest())
+			
+			print ("Error estimator is below required error.")
+			print ("Retrying with coarsened grid...")
+		-------------------------------------------------------------------
+		else
+			-- NORMAL PROCEEDING ----------------------------------------------
+			
+			-- on first success, init the refinement indicators
+			if (time_refine_ind == 0) then
+				time_refine_ind = 2.0	-- first refine will be in time, then in space
+				space_refine_ind = 1.0			
+			end
+			
+			numCoarsenOld = -1.0;
+			-- update new time
+			time = solTimeSeries:time(0) + dt
+			newTime = true
+			
+			-- update check-back counter and if applicable, reset dt
+			cb_counter[lv] = cb_counter[lv] + 1
+			while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+				print ("Doubling time due to continuing convergence; now: " .. 2*dt)
+				dt = 2*dt;
+				lv = lv - 1
+				cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
+				cb_counter[lv+1] = 0
+				time_refine_ind = time_refine_ind * 2
+			end
+			
+			-- plot solution every plotStep seconds
+			if (generateVTKoutput) then
+				if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
+					out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+				end
+			end
+			
+			-- take measurement in nucleus every timeStep seconds 
+			takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+			
+			-- export solution of ca on mem_er
+			--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
+			
+			print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
 		
-		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
-		solTimeSeries:push_discard_oldest(oldestSol, time)
+			-- get oldest solution
+			oldestSol = solTimeSeries:oldest()
+				
+			-- copy values into oldest solution (we reuse the memory here)
+			VecScaleAssign(oldestSol, 1.0, u)
+			
+			-- push oldest solutions with new values to front, oldest sol pointer is popped from end
+			solTimeSeries:push_discard_oldest(oldestSol, time)
+			-------------------------------------------------------------------
+		end
 	end
 end
+
+out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
 
 -- end timeseries, produce gathering file
 if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
