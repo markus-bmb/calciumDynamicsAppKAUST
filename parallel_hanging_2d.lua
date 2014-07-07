@@ -1,5 +1,5 @@
 ----------------------------------------------------------------
---  Example script for error estimation in 3D				  --
+--  Example script for error estimation	in 2D				  --
 --                                                            --
 --  Author: Markus Breit                                      --
 ----------------------------------------------------------------
@@ -9,16 +9,17 @@ SetOutputProfileStats(false)
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
+ug_load_script("util/load_balancing_util.lua")
 
 -- dimension
-dim = 3
+dim = 2
 
 -- choose dimension and algebra
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "paper_test.ugx"
---gridName = "minimal.ugx"
+gridName = "error_estimator_test_2d.ugx"
+--gridName = "paper_test_2d.ugx"
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs",    0)
@@ -45,7 +46,7 @@ def_endTime = nTimeSteps*timeStep
 endTime = util.GetParamNumber("-endTime", def_endTime)
 
 -- choose plotting interval
-plotStep = util.GetParamNumber("-pstep", 0.01)
+plotStep = util.GetParamNumber("-pstep", timeStep)
 
 -- choose solver setup
 solverID = util.GetParam("-solver", "GS")
@@ -102,64 +103,59 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
 ---------------------------------------------------------------------
-function CaCytStart(x, y, z, t)
+function CaCytStart(x, y, t)
     return ca_cyt_init
 end
 
-function CaERStart(x, y, z, t)
+function CaERStart(x, y, t)
     return ca_er_init
 end
 
-function IP3Start(x, y, z, t)
+function IP3Start(x, y, t)
     return ip3_init
 end
 
-function clbStart(x, y, z, t)
+function clbStart(x, y, t)
     return clb_init
 end
 
-function ourDiffTensorCAcyt(x, y, z, t)
-    return	D_cac, 0, 0,
-            0, D_cac, 0,
-            0, 0, D_cac
+function ourDiffTensorCAcyt(x, y, t)
+    return	D_cac, 0,
+            0, D_cac
 end
 
-function ourDiffTensorCAer(x, y, z, t)
-    return	D_cae, 0, 0,
-            0, D_cae, 0,
-            0, 0, D_cae
+function ourDiffTensorCAer(x, y, t)
+    return	D_cae, 0,
+            0, D_cae
 end
 
-function ourDiffTensorIP3(x, y, z, t)
-    return	D_ip3, 0, 0,
-            0, D_ip3, 0,
-            0, 0, D_ip3
+function ourDiffTensorIP3(x, y, t)
+    return	D_ip3, 0,
+            0, D_ip3
 end
 
-function ourDiffTensorClb(x, y, z, t)
-    return	D_clb, 0, 0,
-            0, D_clb, 0,
-            0, 0, D_clb
+function ourDiffTensorClb(x, y, t)
+    return	D_clb, 0,
+            0, D_clb
 end
 
-function ourRhs(x, y, z, t)
+function ourRhs(x, y, t)
     return 0;
 end
 
 
-function IP3Rdensity(x,y,z,t,si)
+function IP3Rdensity(x,y,t,si)
 	return 17.3
 end
 
-function RYRdensity(x,y,z,t,si)
-	-- no ryrs in spine apparatus membrane
-	return 0.4 --0.86
+function RYRdensity(x,y,t,si)
+	return 0.86
 end
 
 -- this is a little bit more complicated, since it must be ensured that
 -- the net flux for equilibrium concentrations is zero
 -- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
-function SERCAdensity(x,y,z,t,si)
+function SERCAdensity(x,y,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
 	local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
@@ -174,23 +170,23 @@ function SERCAdensity(x,y,z,t,si)
 	return dens
 end
 
-function LEAKERconstant(x,y,z,t,si)
+function LEAKERconstant(x,y,t,si)
 	return 3.8e-17 --3.4e-17
 end
 
-function PMCAdensity(x,y,z,t,si)
+function PMCAdensity(x,y,t,si)
 	return 500.0
 end
 
-function NCXdensity(x,y,z,t,si)
+function NCXdensity(x,y,t,si)
 	return 15.0
 end
 
-function VGCCdensity(x,y,z,t,si)
+function VGCCdensity(x,y,t,si)
 	return 1.0
 end
 
-function LEAKPMconstant(x,y,z,t,si)
+function LEAKPMconstant(x,y,t,si)
 	local j_pmca = - 6.9672131147540994e-24 -- - 5.230769230769231e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
 	local j_ncx = - 6.7567567567567566e-23 -- - 5.4347826086956515e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
 	local j_vgcc = 1.5752042094823713e-25	-- single channel VGCC flux (mol/s) - to be determined via gdb
@@ -212,7 +208,7 @@ syn_start = 0
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 10   -- number of spikes	
-function ourNeumannBndCA(x, y, z, t, si)	
+function ourNeumannBndCA(x, y, t, si)	
 	-- spike train
 	if (si==4 and t <= syn_start + caEntryDuration + nSpikes * 1.0/freq) then
         t = t % (1.0/freq)
@@ -223,6 +219,17 @@ function ourNeumannBndCA(x, y, z, t, si)
 	then efflux = -2e-4
 	else efflux = 0.0
 	end	
+    
+    --[[
+ 	-- more smoothness for the input signal
+    if y < -0.5 then
+		efflux = efflux*(2*(y+1)*(y+1))
+	elseif y < 0.5 then 
+		efflux = efflux*(1-2*y*y)
+	else efflux = efflux*(2*(y-1)*(y-1))
+	end
+    --]]
+    
     return -efflux
 end
 
@@ -231,34 +238,76 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 corrFact = -10.4
-function ourNeumannBndIP3(x, y, z, t, si)
-	---[[
+function ourNeumannBndIP3(x, y, t, si)
 	if 	(si==4 and t>syn_start+ip3EntryDelay and t<=syn_start+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syn_start)/ip3EntryDuration)
+	--then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syn_start)/ip3EntryDuration)
+	then efflux = - 2.1e-5 * (1.0 - (t-syn_start)/ip3EntryDuration)
 	else efflux = 0.0
 	end
-    return -efflux
+	
+	--[[
+	-- more smoothness for the input signal
+    if y < -0.5 then
+		efflux = efflux*(2*(y+1)*(y+1))
+	elseif y < 0.5 then 
+		efflux = efflux*(1-2*y*y)
+	else efflux = efflux*(2*(y-1)*(y-1))
+	end
 	--]]
-	--return true, 0.0
+	
+    return -efflux
 end
 
 -------------------------------
 -- setup approximation space --
 -------------------------------
 -- create, load, refine and distribute domain
-print("create, refine and distribute domain")
-neededSubsets = {}
+neededSubsets = {"cyt", "er", "mem_cyt", "mem_er", "syn"}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
-dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+--dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
+dom = util.CreateDomain(gridName, 0, neededSubsets)
+balancer.partitioner = "dynBisection"
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl = 0
+balancer.firstDistProcs = 64
+balancer.redistSteps = 1
+balancer.redistProcs = 256
+balancer.RefineAndRebalanceDomain(dom, numRefs)
+
+-- in parallel environments: use a load balancer to distribute the grid
+balancer.ParseParameters()
+balancer.PrintParameters()
+loadBalancer = balancer.CreateLoadBalancer(dom)
+
+print(dom:domain_info():to_string())
+
+if load_balancer ~= nil then
+	loadBalancer:print_quality_records()
+end
 --[[
+-- create an instance of Domain
+print("Creating domain.")
+dom = Domain()
+
+-- load domain and check subsets
+print("Loading domain from file " .. gridName ..".")
+LoadDomain(dom, gridName)
+
+if util.CheckSubsets(dom, neededSubsets) == false then
+	print("Subset check failed. Aborting...")
+	exit()
+end
+--]]
+
+---[[
 --print("Saving domain grid and hierarchy.")
---SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
-print("Saving parallel grid layout")
+SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
+SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
+--print("Saving parallel grid layout")
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
@@ -297,19 +346,19 @@ approxSpace:print_statistic()
 print ("Setting up Assembling")
 
 -- start value function setup
-CaCytStartValue = LuaUserNumber3d("CaCytStart")
-CaERStartValue = LuaUserNumber3d("CaERStart")
-IP3StartValue = LuaUserNumber3d("IP3Start")
-ClbStartValue = LuaUserNumber3d("clbStart")
+CaCytStartValue = LuaUserNumber2d("CaCytStart")
+CaERStartValue = LuaUserNumber2d("CaERStart")
+IP3StartValue = LuaUserNumber2d("IP3Start")
+ClbStartValue = LuaUserNumber2d("clbStart")
 
 -- diffusion Tensor setup
-diffusionMatrixCAcyt = LuaUserMatrix3d("ourDiffTensorCAcyt")
-diffusionMatrixCAer = LuaUserMatrix3d("ourDiffTensorCAer")
-diffusionMatrixIP3 = LuaUserMatrix3d("ourDiffTensorIP3")
-diffusionMatrixClb = LuaUserMatrix3d("ourDiffTensorClb")
+diffusionMatrixCAcyt = LuaUserMatrix2d("ourDiffTensorCAcyt")
+diffusionMatrixCAer = LuaUserMatrix2d("ourDiffTensorCAer")
+diffusionMatrixIP3 = LuaUserMatrix2d("ourDiffTensorIP3")
+diffusionMatrixClb = LuaUserMatrix2d("ourDiffTensorClb")
 
 -- rhs setup
-rhs = LuaUserNumber3d("ourRhs")
+rhs = LuaUserNumber2d("ourRhs")
 
 
 ----------------------------------------------------------
@@ -324,15 +373,15 @@ elseif dim == 3 then
     upwind = NoUpwind3d()
 end
 
-elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
-elemDiscER:set_diffusion(diffusionMatrixCAer)
-elemDiscER:set_source(rhs)
-elemDiscER:set_upwind(upwind)
-
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
+
+elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
+elemDiscER:set_diffusion(diffusionMatrixCAer)
+elemDiscER:set_source(rhs)
+elemDiscER:set_upwind(upwind)
 
 elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
@@ -347,13 +396,13 @@ elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 -- error estimators
-eeCaCyt = SideAndElemErrEstData(2,2)
-eeCaER 	= SideAndElemErrEstData(2,2)
-eeIP3 	= SideAndElemErrEstData(2,2)
-eeClb 	= SideAndElemErrEstData(2,2)
+eeCaCyt = SideAndElemErrEstData(4,4,cytVol)
+eeCaER 	= SideAndElemErrEstData(4,4,erVol)
+eeIP3 	= SideAndElemErrEstData(4,4,cytVol)
+eeClb 	= SideAndElemErrEstData(4,4,cytVol)
 
-elemDiscER:set_error_estimator(eeCaER)
 elemDiscCYT:set_error_estimator(eeCaCyt)
+elemDiscER:set_error_estimator(eeCaER)
 elemDiscIP3:set_error_estimator(eeIP3)
 elemDiscClb:set_error_estimator(eeClb)
 
@@ -487,6 +536,7 @@ domainDisc:add(elemDiscBuffering)
 -- (outer) boundary conditions
 domainDisc:add(neumannDiscCA)
 domainDisc:add(neumannDiscIP3)
+
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
@@ -501,7 +551,6 @@ domainDisc:add(innerDiscLeak)
 
 -- constraints for adatptivity
 domainDisc:add(OneSideP1Constraints())
-
 
 -------------------------------
 -- setup time discretization --
@@ -567,7 +616,6 @@ if (solverID == "GMG-ILU") then
 else
     gmg:set_smoother(ilu)
 end 
-gmg:set_rap(false)
 gmg:set_cycle_type(1)
 gmg:set_num_presmooth(5)
 gmg:set_num_postsmooth(3)
@@ -596,7 +644,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
+newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-21, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 newtonConvCheck:set_adaptive(true)
@@ -637,13 +685,17 @@ if (generateVTKoutput) then
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
--- refiner setup
-refiner = HangingNodeDomainRefiner(dom)
-TOL = 1e-14
+
+-- create refiner
+print("Creating hanging node refiner.")
+refiner = HangingNodeDomainRefiner(dom);
+
+-- constants for refinement / coarsening
+TOL = 1e-15
 refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
-maxElem = 50000
+maxNodes = 20000
 
 -- set indicators for refinement in space and time to 0
 space_refine_ind = 0.0
@@ -658,6 +710,7 @@ out_error = VTKOutput()
 out_error:clear_selection()
 out_error:select_all(false)
 out_error:select_element("eta_squared", "error")
+--out_error:print(fileName .. "vtk/error_estimator", u_vtk, step, time)
 
 takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
@@ -684,6 +737,12 @@ while endTime-time > 0.001*dt do
 		newTime = false
 		numCoarsenOld = -1.0;
 		n=0
+	end
+	
+	-- rebalancing
+	if loadBalancer ~= nil then
+		loadBalancer:rebalance()
+		loadBalancer:create_quality_record("time_".. math.floor((time+dt)/dt+0.5)*dt)
 	end
 	
 	-- setup time disc for old solutions and timestep
@@ -715,9 +774,6 @@ while endTime-time > 0.001*dt do
 		--					   refinement fraction of max error, coarsening fraction (-1) of min error,
 		--					   max #refinements)
 		timeDisc:calc_error(u, u_vtk)
-		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-			out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
-		end
 		
 		changedGrid = false
 		
@@ -763,9 +819,9 @@ while endTime-time > 0.001*dt do
 		else
 			-- GRID REFINEMENT ------------------------------------------------
 		
-			-- if too many elements: 
-			numElemBeforeRefinement = dom:domain_info():num_elements()
-			if (numElemBeforeRefinement > maxElem) then
+			-- if too many elements:
+			local nodesBeforeRefinement = ParallelSum(dom:grid():num_vertices())
+			if (nodesBeforeRefinement > maxNodes) then
 				print ("Adaptive refinement failed - too many elements. Aborting.")
 				print ("Failed at point in time " .. time .. ".")
 				time = endTime
@@ -786,8 +842,8 @@ while endTime-time > 0.001*dt do
 						   .. TOL*adaptTolerance .. " in order to mark elements for refinement.")
 				end
 				
-				numElemAfterRefinement = dom:domain_info():num_elements()
-				space_refine_ind = space_refine_ind * numElemBeforeRefinement / numElemAfterRefinement;
+				local nodesAfterRefinement = ParallelSum(dom:grid():num_vertices())
+				space_refine_ind = space_refine_ind * nodesBeforeRefinement / nodesAfterRefinement;
 				
 				-- error is invalid, since grid has changed
 				timeDisc:invalidate_error()
@@ -806,6 +862,7 @@ while endTime-time > 0.001*dt do
 		-- GRID COARSENING ------------------------------------------------
 		
 		timeDisc:mark_for_coarsening(refiner, TOL, coarseFrac, maxLevel)
+		local nodesBeforeCoarsening = ParallelSum(dom:grid():num_vertices())
 		numElemBeforeCoarsening = dom:domain_info():num_elements()
 		numCoarsenNew = refiner:num_marked_elements()
 		if (numCoarsenNew >= numElemBeforeCoarsening/5
@@ -813,13 +870,13 @@ while endTime-time > 0.001*dt do
 			refiner:coarsen()
 			numCoarsenOld = numCoarsenNew
 		end
-		numElemAfterCoarsening = dom:domain_info():num_elements()
+		local nodesAfterCoarsening = ParallelSum(dom:grid():num_vertices())
 		
 		refiner:clear_marks()
 		
 		-- grid is changed iff number of elements is different than before
-		if (numElemAfterCoarsening ~= numElemBeforeCoarsening) then
-			space_refine_ind = space_refine_ind * numElemBeforeCoarsening / numElemAfterCoarsening;
+		if (nodesAfterCoarsening ~= nodesBeforeCoarsening) then
+			space_refine_ind = space_refine_ind * nodesBeforeCoarsening / nodesAfterCoarsening;
 			
 			-- error is invalid, since grid has changed
 			timeDisc:invalidate_error()
@@ -858,10 +915,11 @@ while endTime-time > 0.001*dt do
 				time_refine_ind = time_refine_ind * 2
 			end
 			
-			-- plot solution every plotStep seconds
+			-- plot solution (& error) every plotStep seconds
 			if (generateVTKoutput) then
 				if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
 					out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+					out_error:print(fileName .. "vtk/error_estimator", u_vtk, math.floor(time/plotStep+0.5), time)
 				end
 			end
 			
@@ -886,7 +944,12 @@ while endTime-time > 0.001*dt do
 	end
 end
 
+-- output of load balancing quality statistics
+if loadBalancer ~= nil then
+	loadBalancer:print_quality_records()
+end
+
 out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
 
 -- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
+if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u)end

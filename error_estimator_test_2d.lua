@@ -1,5 +1,5 @@
 ----------------------------------------------------------------
---  Example script for error estimation in 3D				  --
+--  Example script for error estimation	in 2D				  --
 --                                                            --
 --  Author: Markus Breit                                      --
 ----------------------------------------------------------------
@@ -11,14 +11,14 @@ SetOutputProfileStats(false)
 ug_load_script("ug_util.lua")
 
 -- dimension
-dim = 3
+dim = 2
 
 -- choose dimension and algebra
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "paper_test.ugx"
---gridName = "minimal.ugx"
+gridName = "error_estimator_test_2d.ugx"
+--gridName = "paper_test_2d.ugx"
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs",    0)
@@ -45,7 +45,7 @@ def_endTime = nTimeSteps*timeStep
 endTime = util.GetParamNumber("-endTime", def_endTime)
 
 -- choose plotting interval
-plotStep = util.GetParamNumber("-pstep", 0.01)
+plotStep = util.GetParamNumber("-pstep", timeStep)
 
 -- choose solver setup
 solverID = util.GetParam("-solver", "GS")
@@ -102,64 +102,59 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
 ---------------------------------------------------------------------
-function CaCytStart(x, y, z, t)
+function CaCytStart(x, y, t)
     return ca_cyt_init
 end
 
-function CaERStart(x, y, z, t)
+function CaERStart(x, y, t)
     return ca_er_init
 end
 
-function IP3Start(x, y, z, t)
+function IP3Start(x, y, t)
     return ip3_init
 end
 
-function clbStart(x, y, z, t)
+function clbStart(x, y, t)
     return clb_init
 end
 
-function ourDiffTensorCAcyt(x, y, z, t)
-    return	D_cac, 0, 0,
-            0, D_cac, 0,
-            0, 0, D_cac
+function ourDiffTensorCAcyt(x, y, t)
+    return	D_cac, 0,
+            0, D_cac
 end
 
-function ourDiffTensorCAer(x, y, z, t)
-    return	D_cae, 0, 0,
-            0, D_cae, 0,
-            0, 0, D_cae
+function ourDiffTensorCAer(x, y, t)
+    return	D_cae, 0,
+            0, D_cae
 end
 
-function ourDiffTensorIP3(x, y, z, t)
-    return	D_ip3, 0, 0,
-            0, D_ip3, 0,
-            0, 0, D_ip3
+function ourDiffTensorIP3(x, y, t)
+    return	D_ip3, 0,
+            0, D_ip3
 end
 
-function ourDiffTensorClb(x, y, z, t)
-    return	D_clb, 0, 0,
-            0, D_clb, 0,
-            0, 0, D_clb
+function ourDiffTensorClb(x, y, t)
+    return	D_clb, 0,
+            0, D_clb
 end
 
-function ourRhs(x, y, z, t)
+function ourRhs(x, y, t)
     return 0;
 end
 
 
-function IP3Rdensity(x,y,z,t,si)
+function IP3Rdensity(x,y,t,si)
 	return 17.3
 end
 
-function RYRdensity(x,y,z,t,si)
-	-- no ryrs in spine apparatus membrane
-	return 0.4 --0.86
+function RYRdensity(x,y,t,si)
+	return 0.4--0.86
 end
 
 -- this is a little bit more complicated, since it must be ensured that
 -- the net flux for equilibrium concentrations is zero
 -- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
-function SERCAdensity(x,y,z,t,si)
+function SERCAdensity(x,y,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
 	local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
@@ -174,23 +169,23 @@ function SERCAdensity(x,y,z,t,si)
 	return dens
 end
 
-function LEAKERconstant(x,y,z,t,si)
+function LEAKERconstant(x,y,t,si)
 	return 3.8e-17 --3.4e-17
 end
 
-function PMCAdensity(x,y,z,t,si)
+function PMCAdensity(x,y,t,si)
 	return 500.0
 end
 
-function NCXdensity(x,y,z,t,si)
+function NCXdensity(x,y,t,si)
 	return 15.0
 end
 
-function VGCCdensity(x,y,z,t,si)
+function VGCCdensity(x,y,t,si)
 	return 1.0
 end
 
-function LEAKPMconstant(x,y,z,t,si)
+function LEAKPMconstant(x,y,t,si)
 	local j_pmca = - 6.9672131147540994e-24 -- - 5.230769230769231e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
 	local j_ncx = - 6.7567567567567566e-23 -- - 5.4347826086956515e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
 	local j_vgcc = 1.5752042094823713e-25	-- single channel VGCC flux (mol/s) - to be determined via gdb
@@ -212,7 +207,7 @@ syn_start = 0
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 10   -- number of spikes	
-function ourNeumannBndCA(x, y, z, t, si)	
+function ourNeumannBndCA(x, y, t, si)	
 	-- spike train
 	if (si==4 and t <= syn_start + caEntryDuration + nSpikes * 1.0/freq) then
         t = t % (1.0/freq)
@@ -223,6 +218,17 @@ function ourNeumannBndCA(x, y, z, t, si)
 	then efflux = -2e-4
 	else efflux = 0.0
 	end	
+    
+    --[[
+ 	-- more smoothness for the input signal
+    if y < -0.5 then
+		efflux = efflux*(2*(y+1)*(y+1))
+	elseif y < 0.5 then 
+		efflux = efflux*(1-2*y*y)
+	else efflux = efflux*(2*(y-1)*(y-1))
+	end
+    --]]
+    
     return -efflux
 end
 
@@ -231,15 +237,24 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 corrFact = -10.4
-function ourNeumannBndIP3(x, y, z, t, si)
-	---[[
+function ourNeumannBndIP3(x, y, t, si)
 	if 	(si==4 and t>syn_start+ip3EntryDelay and t<=syn_start+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syn_start)/ip3EntryDuration)
+	--then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syn_start)/ip3EntryDuration)
+	then efflux = - 2.1e-5 * (1.0 - (t-syn_start)/ip3EntryDuration)
 	else efflux = 0.0
 	end
-    return -efflux
+	
+	--[[
+	-- more smoothness for the input signal
+    if y < -0.5 then
+		efflux = efflux*(2*(y+1)*(y+1))
+	elseif y < 0.5 then 
+		efflux = efflux*(1-2*y*y)
+	else efflux = efflux*(2*(y-1)*(y-1))
+	end
 	--]]
-	--return true, 0.0
+	
+    return -efflux
 end
 
 -------------------------------
@@ -254,11 +269,11 @@ weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
---[[
+---[[
 --print("Saving domain grid and hierarchy.")
---SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
-print("Saving parallel grid layout")
+SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
+SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
+--print("Saving parallel grid layout")
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
@@ -297,19 +312,19 @@ approxSpace:print_statistic()
 print ("Setting up Assembling")
 
 -- start value function setup
-CaCytStartValue = LuaUserNumber3d("CaCytStart")
-CaERStartValue = LuaUserNumber3d("CaERStart")
-IP3StartValue = LuaUserNumber3d("IP3Start")
-ClbStartValue = LuaUserNumber3d("clbStart")
+CaCytStartValue = LuaUserNumber2d("CaCytStart")
+CaERStartValue = LuaUserNumber2d("CaERStart")
+IP3StartValue = LuaUserNumber2d("IP3Start")
+ClbStartValue = LuaUserNumber2d("clbStart")
 
 -- diffusion Tensor setup
-diffusionMatrixCAcyt = LuaUserMatrix3d("ourDiffTensorCAcyt")
-diffusionMatrixCAer = LuaUserMatrix3d("ourDiffTensorCAer")
-diffusionMatrixIP3 = LuaUserMatrix3d("ourDiffTensorIP3")
-diffusionMatrixClb = LuaUserMatrix3d("ourDiffTensorClb")
+diffusionMatrixCAcyt = LuaUserMatrix2d("ourDiffTensorCAcyt")
+diffusionMatrixCAer = LuaUserMatrix2d("ourDiffTensorCAer")
+diffusionMatrixIP3 = LuaUserMatrix2d("ourDiffTensorIP3")
+diffusionMatrixClb = LuaUserMatrix2d("ourDiffTensorClb")
 
 -- rhs setup
-rhs = LuaUserNumber3d("ourRhs")
+rhs = LuaUserNumber2d("ourRhs")
 
 
 ----------------------------------------------------------
@@ -324,15 +339,15 @@ elseif dim == 3 then
     upwind = NoUpwind3d()
 end
 
-elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
-elemDiscER:set_diffusion(diffusionMatrixCAer)
-elemDiscER:set_source(rhs)
-elemDiscER:set_upwind(upwind)
-
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
 elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
+
+elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
+elemDiscER:set_diffusion(diffusionMatrixCAer)
+elemDiscER:set_source(rhs)
+elemDiscER:set_upwind(upwind)
 
 elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
@@ -347,13 +362,13 @@ elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 -- error estimators
-eeCaCyt = SideAndElemErrEstData(2,2)
-eeCaER 	= SideAndElemErrEstData(2,2)
-eeIP3 	= SideAndElemErrEstData(2,2)
-eeClb 	= SideAndElemErrEstData(2,2)
+eeCaCyt = SideAndElemErrEstData(1,4)
+eeCaER 	= SideAndElemErrEstData(1,4)
+eeIP3 	= SideAndElemErrEstData(1,4)
+eeClb 	= SideAndElemErrEstData(1,4)
 
-elemDiscER:set_error_estimator(eeCaER)
 elemDiscCYT:set_error_estimator(eeCaCyt)
+elemDiscER:set_error_estimator(eeCaER)
 elemDiscIP3:set_error_estimator(eeIP3)
 elemDiscClb:set_error_estimator(eeClb)
 
@@ -490,7 +505,7 @@ domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
---domainDisc:add(neumannDiscVGCC)
+domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
@@ -501,7 +516,6 @@ domainDisc:add(innerDiscLeak)
 
 -- constraints for adatptivity
 domainDisc:add(OneSideP1Constraints())
-
 
 -------------------------------
 -- setup time discretization --
@@ -567,7 +581,6 @@ if (solverID == "GMG-ILU") then
 else
     gmg:set_smoother(ilu)
 end 
-gmg:set_rap(false)
 gmg:set_cycle_type(1)
 gmg:set_num_presmooth(5)
 gmg:set_num_postsmooth(3)
@@ -596,7 +609,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
+newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-21, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 newtonConvCheck:set_adaptive(true)
@@ -637,9 +650,10 @@ if (generateVTKoutput) then
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
+
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
-TOL = 1e-14
+TOL = 1e-15
 refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
@@ -715,9 +729,6 @@ while endTime-time > 0.001*dt do
 		--					   refinement fraction of max error, coarsening fraction (-1) of min error,
 		--					   max #refinements)
 		timeDisc:calc_error(u, u_vtk)
-		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-			out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
-		end
 		
 		changedGrid = false
 		
@@ -858,10 +869,11 @@ while endTime-time > 0.001*dt do
 				time_refine_ind = time_refine_ind * 2
 			end
 			
-			-- plot solution every plotStep seconds
+			-- plot solution (& error) every plotStep seconds
 			if (generateVTKoutput) then
 				if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
 					out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+					out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
 				end
 			end
 			
@@ -889,4 +901,4 @@ end
 out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
 
 -- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
+if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u)end
