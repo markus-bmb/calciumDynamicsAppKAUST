@@ -625,7 +625,7 @@ gmg:set_num_postsmooth(3)
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-06)
-convCheck:set_verbose(false)
+convCheck:set_verbose(true)
 bicgstabSolver = BiCGStab()
 if (solverID == "ILU") then
     convCheck:set_maximum_steps(2000)
@@ -952,4 +952,4 @@ end
 out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
 
 -- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u)end
+if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
