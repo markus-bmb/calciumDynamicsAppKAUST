@@ -655,7 +655,7 @@ if (generateVTKoutput) then
 end
 
 --takeMeasurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
-takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 --takeMeasurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/data")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
@@ -740,7 +740,7 @@ while endTime-time > 0.001*dt do
 		--if math.abs(time/timeStep - math.floor(time/timeStep+0.5)) < 1e-5
 		--then
 		--takeMeasurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
-		takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+		takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 		--takeMeasurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/app")
 		--end
 				
