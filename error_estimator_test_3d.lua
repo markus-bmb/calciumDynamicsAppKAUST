@@ -308,10 +308,6 @@ diffusionMatrixCAer = LuaUserMatrix3d("ourDiffTensorCAer")
 diffusionMatrixIP3 = LuaUserMatrix3d("ourDiffTensorIP3")
 diffusionMatrixClb = LuaUserMatrix3d("ourDiffTensorClb")
 
--- rhs setup
-rhs = LuaUserNumber3d("ourRhs")
-
-
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
@@ -326,19 +322,16 @@ end
 
 elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
 elemDiscER:set_diffusion(diffusionMatrixCAer)
-elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
-elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
 elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
-elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
 elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
@@ -347,10 +340,10 @@ elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 -- error estimators
-eeCaCyt = SideAndElemErrEstData(2,2)
-eeCaER 	= SideAndElemErrEstData(2,2)
-eeIP3 	= SideAndElemErrEstData(2,2)
-eeClb 	= SideAndElemErrEstData(2,2)
+eeCaCyt = SideAndElemErrEstData(2, 2, cytVol)
+eeCaER 	= SideAndElemErrEstData(2, 2, erVol)
+eeIP3 	= SideAndElemErrEstData(2, 2, cytVol)
+eeClb 	= SideAndElemErrEstData(2, 2, cytVol)
 
 elemDiscER:set_error_estimator(eeCaER)
 elemDiscCYT:set_error_estimator(eeCaCyt)
