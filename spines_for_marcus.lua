@@ -183,8 +183,8 @@ end
 
 -- firing pattern of the synapse
 syns = {}
-synStart = 9
-synStop = 9
+synStart = 6
+synStop = 6
 caEntryDuration = 0.01
 for i=synStart,synStop do
 	syns[i] = 0.005*(i-synStart)
@@ -249,8 +249,6 @@ approxSpace = ApproximationSpace(dom)
 
 -- collect several subset names in subdomain variables
 cytVol = "cyt"
-measZones = "head, neck, dend"
-cytVol = cytVol .. ", " .. measZones
 
 erVol = "er, app"
 
@@ -485,7 +483,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-18, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 
