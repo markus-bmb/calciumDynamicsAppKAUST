@@ -651,7 +651,7 @@ TOL = 5e-14
 refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
-maxElem = 50000
+maxElem = 100000
 
 -- set indicators for refinement in space and time to 0
 space_refine_ind = 0.0

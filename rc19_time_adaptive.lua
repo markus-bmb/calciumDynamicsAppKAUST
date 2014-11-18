@@ -53,9 +53,6 @@ then
 	endTime = nTimeSteps*timeStep
 end
 
--- chose plotting interval
-plotStep = util.GetParamNumber("-pstep", 0.01)
-
 -- choose solver setup
 solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
@@ -84,6 +81,9 @@ fileName = fileName.."/"
 
 -- specify -vtk to generate vtk output
 generateVTKoutput = util.HasParamOption("-vtk")
+
+-- chose plotting interval
+plotStep = util.GetParamNumber("-pstep", 0.01)
 
 
 ---------------

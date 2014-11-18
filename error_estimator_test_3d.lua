@@ -336,14 +336,13 @@ elemDiscIP3:set_upwind(upwind)
 
 elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClb)
-elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 -- error estimators
-eeCaCyt = SideAndElemErrEstData(2, 2, cytVol)
-eeCaER 	= SideAndElemErrEstData(2, 2, erVol)
-eeIP3 	= SideAndElemErrEstData(2, 2, cytVol)
-eeClb 	= SideAndElemErrEstData(2, 2, cytVol)
+eeCaCyt = SideAndElemErrEstData(4, 4, cytVol)
+eeCaER 	= SideAndElemErrEstData(4, 4, erVol)
+eeIP3 	= SideAndElemErrEstData(4, 4, cytVol)
+eeClb 	= SideAndElemErrEstData(4, 4, cytVol)
 
 elemDiscER:set_error_estimator(eeCaER)
 elemDiscCYT:set_error_estimator(eeCaCyt)

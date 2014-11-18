@@ -1,6 +1,9 @@
 -- This file converts xlsx data (V_m or fluorescence) from Anna
 -- to files that can be read using Vm2Ug.
 
+
+-- fluorescence values
+--[[
 io.input("o_table.csv")
 
 -- first line: time points
@@ -46,7 +49,30 @@ for i=2,count do
 	end
 	--print("output for time point "..i.." done")
 end
+--]]
 
 
+-- potential values
+io.input("v_table.csv")
+
+while true do
+	-- read line (one time point)
+	local line = io.read()
+	if line == nil then break end
+	
+	data = {}
+	col = 0
+	-- values are comma-separated
+	for value in string.gmatch(line, '([^,]+)') do
+   		col = col+1
+   		data[col] = value
+	end
+	
+	-- write output file (only if around the stimulation time)
+	if (math.abs(data[1]-1100) <= 200) then
+		io.output(string.format("camh36/Vm/Vm_%.4f.dat", 0.001*data[1]))
+		io.write(string.format("0.0 0.0 0.0\t%.4f", data[2]), "\n")
+	end
+end
 
 

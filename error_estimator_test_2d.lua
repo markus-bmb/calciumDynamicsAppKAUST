@@ -341,31 +341,27 @@ end
 
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
 elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
-elemDiscCYT:set_source(rhs)
 elemDiscCYT:set_upwind(upwind)
 
 elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
 elemDiscER:set_diffusion(diffusionMatrixCAer)
-elemDiscER:set_source(rhs)
 elemDiscER:set_upwind(upwind)
 
 elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
 elemDiscIP3:set_diffusion(diffusionMatrixIP3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
-elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
 elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
 elemDiscClb:set_diffusion(diffusionMatrixClb)
-elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
 -- error estimators
-eeCaCyt = SideAndElemErrEstData(1,4)
-eeCaER 	= SideAndElemErrEstData(1,4)
-eeIP3 	= SideAndElemErrEstData(1,4)
-eeClb 	= SideAndElemErrEstData(1,4)
+eeCaCyt = SideAndElemErrEstData(4, 4, cytVol)
+eeCaER 	= SideAndElemErrEstData(4, 4, erVol)
+eeIP3 	= SideAndElemErrEstData(4, 4, cytVol)
+eeClb 	= SideAndElemErrEstData(4, 4, cytVol)
 
 elemDiscCYT:set_error_estimator(eeCaCyt)
 elemDiscER:set_error_estimator(eeCaER)

@@ -100,8 +100,6 @@ while endTime-time > 0.001*dt do
 	-- plot
 	if math.abs((time-startTime)/plotStep - math.floor((time-startTime)/plotStep+0.5)) < 1e-5 then
 		out:print(fileName .. "vtk/fluorescence", u, math.floor((time-startTime)/plotStep+0.5), time)
-	else
-		print("time "..time..": "..math.abs(time/plotStep))
 	end
 
 	time = time + dt
