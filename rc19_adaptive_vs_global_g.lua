@@ -471,7 +471,7 @@ neumannDiscNCX:set_density_function("NCXdensity")
 
 neumannDiscLeak = OneSidedPMCalciumLeakFV1("ca_cyt", plMem)
 neumannDiscLeak:set_density_function("LEAKPMconstant")
-
+--[[
 neumannDiscVGCC = OneSidedBorgGrahamFV1WithVM2UG("ca_cyt", plMem, approxSpace,
 		"neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_", "%.3f", ".dat", false)
 neumannDiscVGCC:set_channel_type_L() --default, but to be sure
@@ -479,7 +479,7 @@ neumannDiscVGCC:set_density_function("VGCCdensity")
 neumannDiscVGCC:init(0.0)
 
 voltageFilesInterval = 0.001;
-
+--]]
 -- error estimators
 eePM = MultipleSideAndElemErrEstData()
 eePM:add(eeCaCyt)
@@ -489,7 +489,7 @@ eePM:set_consider_me(false)
 neumannDiscPMCA:set_error_estimator(eePM)
 neumannDiscNCX:set_error_estimator(eePM)
 neumannDiscLeak:set_error_estimator(eePM)
-neumannDiscVGCC:set_error_estimator(eePM)
+--neumannDiscVGCC:set_error_estimator(eePM)
 
 ------------------------------------------
 -- setup complete domain discretization --
