@@ -49,8 +49,8 @@ end
 timeStepStart = timeStepStartNew
 	
 -- choose end time
-endTime = util.GetParamNumber("-endTime")
-if (endTime == nil)
+endTime = util.GetParamNumber("-endTime", -1)
+if (endTime == -1)
 then
 	-- choose number of time steps
 	nTimeSteps = util.GetParamNumber("-nTimeSteps", 1)
@@ -297,10 +297,10 @@ if load_balancer ~= nil then
 end
 --]]
 
---[[
+---[[
 --print("Saving domain grid and hierarchy.")
 --SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
+SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
 print("Saving parallel grid layout")
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 20.0)
 --]]
@@ -696,7 +696,7 @@ out_error:clear_selection()
 out_error:select_all(false)
 out_error:select_element("eta_squared", "error")
 
-takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+--takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -806,7 +806,7 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
-		takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+		--takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 		
 		-- export solution of ca on mem_er
 		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
