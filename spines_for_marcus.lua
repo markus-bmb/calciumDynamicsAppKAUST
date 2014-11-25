@@ -20,6 +20,9 @@ InitUG(dim, AlgebraType("CPU", 1));
 -- get parameters from command line arguments --
 ------------------------------------------------
 
+-- MARCUS number of geometries
+geomNum = util.GetParam("-number", 1)
+
 -- choice of grid
 gridName = util.GetParam("-grid", "spines/normSpine.ugx")
 
@@ -75,8 +78,10 @@ if (validSolverIDs[solverID] == nil) then
 end
  
 -- choose directory for output file (needs to exist)
+-- MARCUS this should be either 1,1,1 or 1,10,1 or something depending on what you need
+for var=1,geomNum,1 do
 fileName = util.GetParam("-outName", "spine_sims")
-fileName = fileName.."/"
+fileName = fileName .. var .. "/"
 
 ---------------
 -- constants --
@@ -227,13 +232,14 @@ end
 -------------------------------
 -- create, load, refine and distribute domain
 -- (the distribution method is only needed for parallel execution and prevents cutting the domain along a membrane)
+
 print("create, refine and distribute domain")
 neededSubsets = {}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
-dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+dom = util.CreateAndDistributeDomain(gridName .. var .. ".ugx", numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
 --[[
 --print("Saving domain grid and hierarchy.")
@@ -249,17 +255,17 @@ approxSpace = ApproximationSpace(dom)
 
 -- collect several subset names in subdomain variables
 cytVol = "cyt"
+measZones = "measZone"..1
+for i=2,3 do
+	measZones = measZones .. ", measZone" .. i
+end
+cytVol = cytVol .. ", " .. measZones
 
 erVol = "er, app"
 
 plMem = "mem_cyt, syn"
 
 erMem = "mem_er, mem_app"
-measZonesERM = "measZoneERM"..1
-for i=2,3 do
-	measZonesERM = measZonesERM .. ", measZoneERM" .. i
-end
-erMem = erMem .. ", " .. measZonesERM
 
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
@@ -483,7 +489,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-18, 1e-08)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 
@@ -529,7 +535,7 @@ end
 
 -- taking an initial measurement of all unknwons in all measurement zones on the ER membrane
 -- the folder "meas" must exist in your file output directory specified in fileName
-takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
 
 
 -- create new grid function for old value
@@ -614,7 +620,7 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- take measurements in measurement zones
-		takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+		takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
 				
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
@@ -629,3 +635,6 @@ end
 
 -- end timeseries, produce gathering paraview file
 if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
+
+-- MARCUS
+end
