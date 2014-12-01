@@ -508,7 +508,7 @@ neumannDiscVGCC = OneSidedBorgGrahamFV1WithVM2UG("ca_cyt", plMem, approxSpace,
 neumannDiscVGCC:set_channel_type_L() --default, but to be sure
 neumannDiscVGCC:set_density_function("VGCCdensity")
 neumannDiscVGCC:init(0.0)
-voltageFilesInterval = 0.001;
+neumannDiscVGCC:set_file_times(0.001, 0.0);
 
 ------------------------------------------
 -- setup complete domain discretization --
