@@ -4,8 +4,12 @@
 --  Author: Markus Breit                                      --
 ----------------------------------------------------------------
 
+-- for profiler output
+SetOutputProfileStats(false)
+
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
+ug_load_script("util/load_balancing_util.lua")
 
 -- dimension
 dim = 3
@@ -263,12 +267,41 @@ end
 -------------------------------
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
+
+--[[
 neededSubsets = {}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+--]]
+
+dom = util.CreateDomain(gridName, 0, neededSubsets)
+
+balancer.partitioner = "parmetis"
+ccw = SubsetCommunicationCostWeights(dom)
+ccw:set_weight_on_subset(10000,4)
+balancer.communicationCostWeights = ccw
+
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl = 0
+balancer.firstDistProcs = 64
+balancer.redistSteps = 1
+balancer.redistProcs = 32
+balancer.RefineAndRebalanceDomain(dom, numRefs)
+
+-- in parallel environments: use a load balancer to distribute the grid
+balancer.ParseParameters()
+balancer.PrintParameters()
+loadBalancer = balancer.CreateLoadBalancer(dom)
+
+print(dom:domain_info():to_string())
+
+if load_balancer ~= nil then
+	loadBalancer:print_quality_records()
+end
+
 
 --[[
 --print("Saving domain grid and hierarchy.")
@@ -540,7 +573,7 @@ elseif (solverID == "GMG-SLU") then
 else
     base = LinearSolver()
     base:set_convergence_check(baseConvCheck)
-    if (solverID == "GMG-ILU" or solverID == "ILU") then
+    if (solverID == "GMG-ILU" or solverID == "SLU") then
         base:set_preconditioner(ilu)
     else
         base:set_preconditioner(gs)
@@ -550,7 +583,7 @@ end
 gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
 gmg:set_base_level(0)
-if (solverID == "GMG-LU" or solverID == "ILU") then
+if (solverID == "GMG-LU" or solverID == "SLU") then
     gmg:set_gathered_base_solver_if_ambiguous(true)
 end
 gmg:set_base_solver(base)
@@ -592,7 +625,7 @@ elseif (solverID == "JAC") then
     convCheck:set_maximum_steps(2000)
     bicgstabSolver:set_preconditioner(jac)
 else
-    convCheck:set_maximum_steps(100)
+    convCheck:set_maximum_steps(500)
     bicgstabSolver:set_preconditioner(gmg)
 end
 bicgstabSolver:set_convergence_check(convCheck)
@@ -647,11 +680,11 @@ end
 
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
-TOL = 5e-14
+TOL = 1e-14
 refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
-maxElem = 100000
+maxElem = 7e6
 
 -- set indicators for refinement in space and time to 0
 space_refine_ind = 0.0
@@ -690,6 +723,13 @@ while endTime-time > 0.001*dt do
 		newTime = false
 		numCoarsenOld = -1.0;
 		n=0
+	end
+	
+	-- rebalancing
+	if loadBalancer ~= nil then
+		print("rebalancing...")
+		loadBalancer:rebalance()
+		loadBalancer:create_quality_record("time_".. math.floor((time+dt)/dt+0.5)*dt)
 	end
 	
 	-- setup time Disc for old solutions and timestep
@@ -786,6 +826,9 @@ while endTime-time > 0.001*dt do
 				end
 				refiner:refine()
 				refiner:clear_marks()
+				
+				--SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
+				--SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_n".. n+1 .."_p"..ProcRank()..".ugx", 20.0)
 				
 				if (adaptTolerance < 1.0) then
 					print ("Adaptive refinement tolerance has temporarily been reduced to "
@@ -887,6 +930,11 @@ while endTime-time > 0.001*dt do
 			print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
 		end
 	end
+end
+
+-- output of load balancing quality statistics
+if loadBalancer ~= nil then
+	loadBalancer:print_quality_records()
 end
 
 out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)

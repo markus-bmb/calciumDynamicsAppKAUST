@@ -297,10 +297,10 @@ if load_balancer ~= nil then
 end
 --]]
 
----[[
+--[[
 --print("Saving domain grid and hierarchy.")
 --SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
-SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
+SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
 print("Saving parallel grid layout")
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 20.0)
 --]]
@@ -673,14 +673,13 @@ if (generateVTKoutput) then
 end
 
 -- refiner setup
-refiner = GlobalDomainRefiner(dom)
-hn_refiner = HangingNodeDomainRefiner(dom)
+refiner = HangingNodeDomainRefiner(dom)
 
-TOL = 1e-15
+TOL = 1e-14
 refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
-maxElem = 7e6
+maxElem = 1e8
 
 -- set indicators for refinement in space and time to 0
 space_refine_ind = 0.0
@@ -754,9 +753,9 @@ while endTime-time > 0.001*dt do
 		changedGrid = false
 		
 		-- refining
-		timeDisc:mark_for_refinement(hn_refiner, TOL, refineFrac, maxLevel)
-		if hn_refiner:num_marked_elements() > 0 then
-			hn_refiner:clear_marks()
+		timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+		if refiner:num_marked_elements() > 0 then
+			refiner:clear_marks()
 			error_fail = true
 			print ("Error estimator is above required error.")
 		end
@@ -773,6 +772,7 @@ while endTime-time > 0.001*dt do
 			print ("Failed at point in time " .. time .. ".")
 			time = endTime
 		else
+			MarkForRefinement_All(refiner)
 			refiner:refine()
 			
 			numElemAfterRefinement = dom:domain_info():num_elements()
@@ -835,7 +835,10 @@ out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
 -- end timeseries, produce gathering file
 if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
 
---[[
+-- write profiler output  to file
+WriteProfileData(fileName .. "profile.xml")
+
+---[[
 -- check if profiler is available
 if GetProfilerAvailable() == true then
     print("")
