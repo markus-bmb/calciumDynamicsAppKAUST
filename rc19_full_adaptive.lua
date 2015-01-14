@@ -308,9 +308,11 @@ nucMem = "mem_nuc"
 erVol = "er"
 
 plMem = "mem_cyt"
+plMem_vec = {"mem_cyt"}
 synapses = ""
 for i=1,8 do
 	synapses = synapses .. ", syn" .. i
+	plMem_vec[#plMem_vec+1] = "syn"..i
 end
 plMem = plMem .. synapses
 
@@ -486,6 +488,15 @@ leakPM:set_constant(0, 1.0)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
+vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
+					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
+					 "%.3f", ".dat", false)
+vdcc:set_constant(1, 1.5)
+vdcc:set_scale_inputs({1e3,1.0})
+vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+vdcc:set_channel_type_L() --default, but to be sure
+vdcc:set_file_times(0.001, 0.0)
+vdcc:init(0.0)
 
 neumannDiscPMCA = TwoSidedMembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
@@ -496,19 +507,14 @@ neumannDiscNCX:set_density_function(ncxDensity)
 neumannDiscLeak = TwoSidedMembraneTransportFV1(plMem, leakPM)
 neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 
-neumannDiscVGCC = OneSidedBorgGrahamFV1WithVM2UG("ca_cyt", plMem, approxSpace,
-		"neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_", "%.3f", ".dat", false)
-neumannDiscVGCC:set_channel_type_L() --default, but to be sure
+neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
 neumannDiscVGCC:set_density_function(vgccDensity)
-neumannDiscVGCC:init(0.0)
 
-voltageFilesInterval = 0.001;
 
 -- error estimators
 eePM = MultipleSideAndElemErrEstData()
 eePM:add(eeCaCyt)
 eePM:set_consider_me(false)
-
 
 neumannDiscPMCA:set_error_estimator(eePM)
 neumannDiscNCX:set_error_estimator(eePM)
@@ -538,7 +544,7 @@ domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
---domainDisc:add(neumannDiscVGCC)
+domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
