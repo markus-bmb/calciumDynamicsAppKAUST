@@ -171,7 +171,7 @@ function SERCAdensity(x,y,t,si)
 end
 
 function LEAKERconstant(x,y,t,si)
-	return 3.8e-17 --3.4e-17
+	return 3.8e-08
 end
 
 function PMCAdensity(x,y,t,si)

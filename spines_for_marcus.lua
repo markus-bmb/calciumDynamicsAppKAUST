@@ -132,6 +132,9 @@ function RYRdensity(x,y,z,t,si)
 	return 0.86
 end
 
+-- function for ER/spine apparatus membrane leakage flux density
+leakERconstant = 3.8e-17
+
 -- density function for SERCA pumps in ER/spine apparatus membrane
 -- this is a little bit more complicated, since it must be ensured that
 -- the net flux for equilibrium concentrations is zero
@@ -145,45 +148,21 @@ function SERCAdensity(x,y,z,t,si)
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
 				+ RYRdensity(x,y,z,t,si) * j_ryr
-				+ LEAKERconstant(x,y,z,t,si) * j_leak
+				+ leakERconstant * j_leak
 	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 	
 	return dens
 end
 
--- function for ER/spine apparatus membrane leakage flux density
-function LEAKERconstant(x,y,z,t,si)
-	return 3.8e-17 --3.4e-17
-end
+pmcaDensity = 500.0
+ncxDensity  = 15.0
+vgccDensity = 1.0
 
--- density function for PMCA pumps in plasma membrane
-function PMCAdensity(x,y,z,t,si)
-	return 500.0
-end
-
--- density function for NCX pumps in plasma membrane
-function NCXdensity(x,y,z,t,si)
-	return 15.0
-end
-
--- density function for voltage gated calcium channels in plasma membrane
-function VGCCdensity(x,y,z,t,si)
-	return 1.0
-end
-
--- function for leakage flux density through plasma membrane
-function LEAKPMconstant(x,y,z,t,si)
-	local j_pmca = - 6.9672131147540994e-24 -- - 5.230769230769231e-24	-- single pump PMCA flux (mol/s) - to be determined via gdb
-	local j_ncx = - 6.7567567567567566e-23 -- - 5.4347826086956515e-23	-- single pump NCX flux (mol/s) - to be determined via gdb
-	local j_vgcc = 1.5752042094823713e-25	-- single channel VGCC flux (mol/s) - to be determined via gdb
-				-- *1.5 / * 0.5 for L-type / T-type
-	local flux =  PMCAdensity(x,y,z,t,si) * j_pmca
-				+ NCXdensity(x,y,z,t,si) * j_ncx
-				+ VGCCdensity(x,y,z,t,si) * j_vgcc
-	
-	--if (-flux < 0) then error("PM leak flux is outward for these density settings!") end
-	return -flux -- 6.85e-22
-end
+leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s)
+				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s)
+				+ vgccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
+				-- *1.5 // * 0.5 for L-type // T-type
+if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
 
 -- firing pattern of the synapse
@@ -325,14 +304,34 @@ elemDiscBuffering:add_reaction(
 -- setup inner boundary (channels on ER membrane) --
 ----------------------------------------------------
 -- The order, in which the discrete fcts are passed, is crucial!
-innerDiscIP3R = TwoSidedIP3RFV1("ca_cyt, ca_er, ip3", erMem)
+ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
+ip3r:set_scale_inputs({1e3,1e3,1e3})
+ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+
+ryr = RyR({"ca_cyt", "ca_er"})
+ryr:set_scale_inputs({1e3,1e3})
+ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+
+serca = SERCA({"ca_cyt", "ca_er"})
+serca:set_scale_inputs({1e3,1e3})
+serca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+
+leakER = Leak({"ca_er", "ca_cyt"})
+leakER:set_scale_inputs({1e3,1e3})
+leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
+
+
+innerDiscIP3R = TwoSidedMembraneTransportFV1(erMem, ip3r)
 innerDiscIP3R:set_density_function("IP3Rdensity")
-innerDiscRyR = TwoSidedRyRFV1("ca_cyt, ca_er", erMem)
+
+innerDiscRyR = TwoSidedMembraneTransportFV1(erMem, ryr)
 innerDiscRyR:set_density_function("RYRdensity")
-innerDiscSERCA = TwoSidedSERCAFV1("ca_cyt, ca_er", erMem)
+
+innerDiscSERCA = TwoSidedMembraneTransportFV1(erMem, serca)
 innerDiscSERCA:set_density_function("SERCAdensity")
-innerDiscLeak = TwoSidedERCalciumLeakFV1("ca_cyt, ca_er", erMem)
-innerDiscLeak:set_density_function("LEAKERconstant")
+
+innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
+innerDiscLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
 
 ------------------------------
 -- setup Neumann boundaries --
@@ -344,24 +343,47 @@ neumannDiscIP3 = UserFluxBoundaryFV1("ip3", plMem)
 neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 
 
--- plasme membrane transport systems
-neumannDiscPMCA = OneSidedPMCAFV1("ca_cyt", plMem)
-neumannDiscPMCA:set_density_function("PMCAdensity")
-neumannDiscNCX = OneSidedNCXFV1("ca_cyt", plMem)
-neumannDiscNCX:set_density_function("NCXdensity")
-neumannDiscLeak = OneSidedPMCalciumLeakFV1("ca_cyt", plMem)
-neumannDiscLeak:set_density_function("LEAKPMconstant")
+-- plasma membrane transport systems
+pmca = PMCA({"ca_cyt", ""})
+pmca:set_constant(1, 1.0)
+pmca:set_scale_inputs({1e3,1.0})
+pmca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+
+ncx = NCX({"ca_cyt", ""})
+ncx:set_constant(1, 1.0)
+ncx:set_scale_inputs({1e3,1.0})
+ncx:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+
+leakPM = Leak({"", "ca_cyt"})
+leakPM:set_constant(0, 1.0)
+leakPM:set_scale_inputs({1.0,1e3})
+leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 -- VGCCs: you have to provide a path to files containing the voltage values on the membrane for each time step
 -- if you do not have any, you ccan comment this out (for the time being)
 --[[
-neumannDiscVGCC = OneSidedBorgGrahamFV1WithVM2UG("ca_cyt", plMem, approxSpace,
-		"neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_", "%.3f", ".dat", false)
-neumannDiscVGCC:set_channel_type_L() --default, but to be sure
-neumannDiscVGCC:set_density_function("VGCCdensity")
-neumannDiscVGCC:init(0.0)
-voltageFilesInterval = 0.001;
+vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
+					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
+					 "%.3f", ".dat", false)
+vdcc:set_constant(1, 1.5)
+vdcc:set_scale_inputs({1e3,1.0})
+vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+vdcc:set_channel_type_L() --default, but to be sure
+vdcc:set_file_times(0.001, 0.0)
+vdcc:init(0.0)
 --]]
+
+neumannDiscPMCA = TwoSidedMembraneTransportFV1(plMem, pmca)
+neumannDiscPMCA:set_density_function(pmcaDensity)
+
+neumannDiscNCX = TwoSidedMembraneTransportFV1(plMem, ncx)
+neumannDiscNCX:set_density_function(ncxDensity)
+
+neumannDiscLeak = TwoSidedMembraneTransportFV1(plMem, leakPM)
+neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
+
+--neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
+--neumannDiscVGCC:set_density_function(vgccDensity)
 
 ------------------------------------------
 -- setup complete domain discretization --
