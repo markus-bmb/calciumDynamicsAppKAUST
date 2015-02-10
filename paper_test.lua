@@ -17,7 +17,8 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "paper_test_ref.ugx"
+gridName = util.GetParam("-grid", "paper_test.ugx")
+--gridName = "paper_test_ref.ugx"
 --gridName = "minimal.ugx"
 
 -- total refinements
@@ -102,51 +103,6 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
 ---------------------------------------------------------------------
-function CaCytStart(x, y, z, t)
-    return ca_cyt_init
-end
-
-function CaERStart(x, y, z, t)
-    return ca_er_init
-end
-
-function IP3Start(x, y, z, t)
-    return ip3_init
-end
-
-function clbStart(x, y, z, t)
-    return clb_init
-end
-
-function ourDiffTensorCAcyt(x, y, z, t)
-    return	D_cac, 0, 0,
-            0, D_cac, 0,
-            0, 0, D_cac
-end
-
-function ourDiffTensorCAer(x, y, z, t)
-    return	D_cae, 0, 0,
-            0, D_cae, 0,
-            0, 0, D_cae
-end
-
-function ourDiffTensorIP3(x, y, z, t)
-    return	D_ip3, 0, 0,
-            0, D_ip3, 0,
-            0, 0, D_ip3
-end
-
-function ourDiffTensorClb(x, y, z, t)
-    return	D_clb, 0, 0,
-            0, D_clb, 0,
-            0, 0, D_clb
-end
-
-function ourRhs(x, y, z, t)
-    return 0;
-end
-
-
 function IP3Rdensity(x,y,z,t,si)
 	return 17.3
 end
@@ -156,35 +112,33 @@ function RYRdensity(x,y,z,t,si)
 	return 0.86
 end
 
+leakERconstant = 3.8e-20
+
 -- this is a little bit more complicated, since it must be ensured that
 -- the net flux for equilibrium concentrations is zero
 -- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
 function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
-	local j_ryr = 1.1204582669024472e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
-	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
+	local j_ip3r = 3.7606194166520605e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 1.1204582669024472e-21	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_leak = 1e3*(ca_er_init-ca_cyt_init)	-- leak proportionality factor
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
 				+ RYRdensity(x,y,z,t,si) * j_ryr
-				+ LEAKERconstant(x,y,z,t,si) * j_leak
+				+ leakERconstant * j_leak
 	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 	
 	return dens
-end
-
-function LEAKERconstant(x,y,z,t,si)
-	return 3.8e-08
 end
 
 pmcaDensity = 500.0
 ncxDensity  = 15.0
 vgccDensity = 1.0
 
-leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s)
-				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s)
-				+ vgccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
+leakPMconstant =  pmcaDensity * 6.967213114754098e-24	-- single pump PMCA flux (mol/s)
+				+ ncxDensity *  6.7567567567567554e-23	-- single pump NCX flux (mol/s)
+				+ vgccDensity * (-1.1110712907810124e-28) --(-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
 				-- *1.5 // * 0.5 for L-type // T-type
 if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
@@ -255,6 +209,7 @@ cytVol = "cyt"
 erVol = "er"
 
 plMem = "mem_cyt, syn"
+plMem_vec = {"mem_cyt", "syn"}
 
 erMem = "mem_er"
 measZonesERM = "measZoneERM"..1
@@ -275,26 +230,6 @@ approxSpace:init_levels()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
---------------------------
--- setup user functions --
---------------------------
-print ("Setting up Assembling")
-
--- start value function setup
-CaCytStartValue = LuaUserNumber3d("CaCytStart")
-CaERStartValue = LuaUserNumber3d("CaERStart")
-IP3StartValue = LuaUserNumber3d("IP3Start")
-ClbStartValue = LuaUserNumber3d("clbStart")
-
--- diffusion Tensor setup
-diffusionMatrixCAcyt = LuaUserMatrix3d("ourDiffTensorCAcyt")
-diffusionMatrixCAer = LuaUserMatrix3d("ourDiffTensorCAer")
-diffusionMatrixIP3 = LuaUserMatrix3d("ourDiffTensorIP3")
-diffusionMatrixClb = LuaUserMatrix3d("ourDiffTensorClb")
-
--- rhs setup
-rhs = LuaUserNumber3d("ourRhs")
-
 
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
@@ -309,25 +244,21 @@ elseif dim == 3 then
 end
 
 elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
-elemDiscER:set_diffusion(diffusionMatrixCAer)
-elemDiscER:set_source(rhs)
+elemDiscER:set_diffusion(D_cae)
 elemDiscER:set_upwind(upwind)
 
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
-elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
-elemDiscCYT:set_source(rhs)
+elemDiscCYT:set_diffusion(D_cac)
 elemDiscCYT:set_upwind(upwind)
 
 elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
-elemDiscIP3:set_diffusion(diffusionMatrixIP3)
+elemDiscIP3:set_diffusion(D_ip3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
-elemDiscIP3:set_source(rhs)
 elemDiscIP3:set_upwind(upwind)
 
 elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
-elemDiscClb:set_diffusion(diffusionMatrixClb)
-elemDiscClb:set_source(rhs)
+elemDiscClb:set_diffusion(D_clb)
 elemDiscClb:set_upwind(upwind)
 
 ---------------------------------------
@@ -361,20 +292,20 @@ serca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 leakER = Leak({"ca_er", "ca_cyt"})
 leakER:set_scale_inputs({1e3,1e3})
-leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
+leakER:set_scale_fluxes({1e15}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 
-innerDiscIP3R = TwoSidedMembraneTransportFV1(erMem, ip3r)
+innerDiscIP3R = MembraneTransportFV1(erMem, ip3r)
 innerDiscIP3R:set_density_function("IP3Rdensity")
 
-innerDiscRyR = TwoSidedMembraneTransportFV1(erMem, ryr)
+innerDiscRyR = MembraneTransportFV1(erMem, ryr)
 innerDiscRyR:set_density_function("RYRdensity")
 
-innerDiscSERCA = TwoSidedMembraneTransportFV1(erMem, serca)
+innerDiscSERCA = MembraneTransportFV1(erMem, serca)
 innerDiscSERCA:set_density_function("SERCAdensity")
 
-innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
-innerDiscLeak:set_density_function("LEAKERconstant") -- from mol/(um^2 s M) to m/s
+innerDiscLeak = MembraneTransportFV1(erMem, leakER)
+innerDiscLeak:set_density_function(leakERconstant) -- from mol/(um^2 s M) to m/s
 
 ------------------------------
 -- setup Neumann boundaries --
@@ -391,40 +322,38 @@ neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
-pmca:set_constant(1, 1.0)
+pmca:set_constant(1, 1.5)
 pmca:set_scale_inputs({1e3,1.0})
 pmca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 ncx = NCX({"ca_cyt", ""})
-ncx:set_constant(1, 1.0)
+ncx:set_constant(1, 1.5)
 ncx:set_scale_inputs({1e3,1.0})
 ncx:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 leakPM = Leak({"", "ca_cyt"})
-leakPM:set_constant(0, 1.0)
+leakPM:set_constant(0, 1.5)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
-vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
-					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
-					 "%.3f", ".dat", false)
+vdcc = VDCC_BG_UserData({"ca_cyt", ""}, plMem_vec, approxSpace)
 vdcc:set_constant(1, 1.5)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
-vdcc:set_file_times(0.001, 0.0)
+vdcc:set_potential_function(-0.072)
 vdcc:init(0.0)
 
-neumannDiscPMCA = TwoSidedMembraneTransportFV1(plMem, pmca)
+neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
 
-neumannDiscNCX = TwoSidedMembraneTransportFV1(plMem, ncx)
+neumannDiscNCX = MembraneTransportFV1(plMem, ncx)
 neumannDiscNCX:set_density_function(ncxDensity)
 
-neumannDiscLeak = TwoSidedMembraneTransportFV1(plMem, leakPM)
-neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
+neumannDiscLeak = MembraneTransportFV1(plMem, leakPM)
+neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.5-1e3*ca_cyt_init))
 
-neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
+neumannDiscVGCC = MembraneTransportFV1(plMem, vdcc)
 neumannDiscVGCC:set_density_function(vgccDensity)
 
 ------------------------------------------
@@ -577,10 +506,10 @@ newtonSolver:init(op)
 u = GridFunction(approxSpace)
 
 -- set initial value
-Interpolate(CaCytStartValue, u, "ca_cyt", 0.0)
-Interpolate(CaERStartValue, u, "ca_er", 0.0)
-Interpolate(IP3StartValue, u, "ip3", 0.0)
-Interpolate(ClbStartValue, u, "clb", 0.0)
+Interpolate(ca_cyt_init, u, "ca_cyt", 0.0)
+Interpolate(ca_er_init, u, "ca_er", 0.0)
+Interpolate(ip3_init, u, "ip3", 0.0)
+Interpolate(clb_init, u, "clb", 0.0)
 
 -- timestep in seconds
 dt = timeStepStart
@@ -593,7 +522,7 @@ if (generateVTKoutput) then
 end
 
 
-takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
 
 -- create new grid function for old value
@@ -616,7 +545,7 @@ while endTime-time > 0.001*dt do
 	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
 	
 	-- setup time disc for old solutions and timestep
-	timeDisc:prepare_step(solTimeSeries, dt)
+	timeDisc:prepare_step_elem(solTimeSeries, dt)
 	
 	-- prepare Newton solver
 	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
@@ -674,7 +603,7 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- take measurement in nucleus every timeStep seconds 
-		takeMeasurement(u, approxSpace, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+		takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 		
 		-- export solution of ca on mem_er
 		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
