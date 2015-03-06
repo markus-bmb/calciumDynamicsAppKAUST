@@ -336,6 +336,7 @@ leakPM:set_constant(0, 1.5)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
+---[[
 vdcc = VDCC_BG_UserData({"ca_cyt", ""}, plMem_vec, approxSpace)
 vdcc:set_constant(1, 1.5)
 vdcc:set_scale_inputs({1e3,1.0})
@@ -343,6 +344,18 @@ vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
 vdcc:set_potential_function(-0.072)
 vdcc:init(0.0)
+--]]
+--[[
+vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
+					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
+					 "%.3f", ".dat", false)
+vdcc:set_constant(1, 1.5)
+vdcc:set_scale_inputs({1e3,1.0})
+vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+vdcc:set_channel_type_L() --default, but to be sure
+vdcc:set_file_times(0.001, 0.0)
+vdcc:init(0.0)
+--]]
 
 neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
