@@ -195,11 +195,11 @@ pmcaDensity = 500.0
 ncxDensity  = 15.0
 vgccDensity = 1.0
 
-leakPMconstant =  pmcaDensity * 6.967213114754098e-24	-- single pump PMCA flux (mol/s)
-				+ ncxDensity *  6.7567567567567554e-23	-- single pump NCX flux (mol/s)
-				+ vgccDensity * (-1.1110712907810124-28)    -- single channel VGCC flux (mol/s)
+leakPMconstant = pmcaDensity * 6.967213114754098e-24 +	-- single pump PMCA flux (mol/s)
+				 ncxDensity *  6.7567567567567554e-23 +	-- single pump NCX flux (mol/s)
+				 vgccDensity * (-1.1110712907810124e-28)    -- single channel VGCC flux (mol/s)
 				-- *1.5 // * 0.5 for L-type // T-type
-if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
+if leakPMconstant < 0 then error("PM leak flux is outward for these density settings!") end
 
 
 -- firing pattern of the synapses
@@ -257,21 +257,23 @@ dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubset
 dom = util.CreateDomain(gridName, 0, neededSubsets)
 
 balancer.partitioner = "parmetis"
-ccw = SubsetCommunicationCostWeights(dom)
+ccw = SubsetCommunicationWeights(dom)
 ccw:set_weight_on_subset(10000,4)
 balancer.communicationCostWeights = ccw
 
 balancer.staticProcHierarchy = true
+balancer.redistProcs = 64
 balancer.firstDistLvl = 0
-balancer.firstDistProcs = 64
-balancer.redistSteps = 1
-balancer.redistProcs = 32
-balancer.RefineAndRebalanceDomain(dom, numRefs)
-
--- in parallel environments: use a load balancer to distribute the grid
+balancer.parallelElementThreshold = 24
+balancer.maxLvlsWithoutRedist = 1
 balancer.ParseParameters()
 balancer.PrintParameters()
+
+write(">> distributing and refining domain ...\n")
+-- in parallel environments: use a load balancer to distribute the grid
 loadBalancer = balancer.CreateLoadBalancer(dom)
+balancer.RefineAndRebalanceDomain(dom, numRefs, loadBalancer)
+write(">> distributing done\n")
 
 print(dom:domain_info():to_string())
 
@@ -481,7 +483,7 @@ ncx:set_scale_inputs({1e3,1.0})
 ncx:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 leakPM = Leak({"", "ca_cyt"})
-leakPM:set_constant(0, 1.0)
+leakPM:set_constant(0, 1.5)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
@@ -749,7 +751,7 @@ while endTime-time > 0.001*dt do
 	-- rebalancing
 	if loadBalancer ~= nil then
 		print("rebalancing...")
-		loadBalancer:rebalance()
+		balancer.Rebalance(dom, loadBalancer)
 		loadBalancer:create_quality_record("time_".. math.floor((time+dt)/dt+0.5)*dt)
 	end
 	
