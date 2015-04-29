@@ -199,8 +199,8 @@ gs = GaussSeidel()
 sgs = SymmetricGaussSeidel()
 bgs = BackwardGaussSeidel()
 ilu = ILU()
-iluc = ILUC(approxSpace)
-iluc:add_constraint(adapt_constraint)
+--iluc = ILUC(approxSpace)
+--iluc:add_constraint(adapt_constraint)
 ilut = ILUT(1e-4)
 
 -- exact solver
@@ -210,42 +210,42 @@ superLU = SuperLU()
 
 -- geometric multi-grid --
 -- base solver
-baseConvCheck = ConvCheck()
-baseConvCheck:set_maximum_steps(1000)
-baseConvCheck:set_minimum_defect(1e-30)
-baseConvCheck:set_reduction(1e-8)
-baseConvCheck:set_verbose(false)
+-- baseConvCheck = ConvCheck()
+-- baseConvCheck:set_maximum_steps(1000)
+-- baseConvCheck:set_minimum_defect(1e-30)
+-- baseConvCheck:set_reduction(1e-8)
+-- baseConvCheck:set_verbose(false)
 
--- debug writer
-dbgWriter = GridFunctionDebugWriter(approxSpace)
-dbgWriter:set_vtk_output(false)
+-- -- debug writer
+-- dbgWriter = GridFunctionDebugWriter(approxSpace)
+-- dbgWriter:set_vtk_output(false)
 
-if (solverID == "GMG-LU") then
-    base = exactSolver
-elseif (solverID == "GMG-SLU") then
-    base = superLU
-else
-    base = LinearSolver()
-    base:set_convergence_check(baseConvCheck)
-    if (solverID == "GMG-ILU") then
-        base:set_preconditioner(ilu)
-    else
-        base:set_preconditioner(gs)
-    end
-end
+-- if (solverID == "GMG-LU") then
+--     base = exactSolver
+-- elseif (solverID == "GMG-SLU") then
+--     base = superLU
+-- else
+--     base = LinearSolver()
+--     base:set_convergence_check(baseConvCheck)
+--     if (solverID == "GMG-ILU") then
+--         base:set_preconditioner(ilu)
+--     else
+--         base:set_preconditioner(gs)
+--     end
+-- end
 
 -- gmg
-gmg = GeometricMultiGrid(approxSpace)
-gmg:set_discretization(timeDisc)
-gmg:set_base_level(0)
-if (solverID == "GMG-LU" or solverID == "GMG-SLU") then
-    gmg:set_gathered_base_solver_if_ambiguous(true)
-end
-gmg:set_base_solver(base)
-gmg:set_smoother(iluc)
-gmg:set_cycle_type(1)
-gmg:set_num_presmooth(3)
-gmg:set_num_postsmooth(3)
+-- gmg = GeometricMultiGrid(approxSpace)
+-- gmg:set_discretization(timeDisc)
+-- gmg:set_base_level(0)
+-- if (solverID == "GMG-LU" or solverID == "GMG-SLU") then
+--     gmg:set_gathered_base_solver_if_ambiguous(true)
+-- end
+-- gmg:set_base_solver(base)
+-- gmg:set_smoother(iluc)
+-- gmg:set_cycle_type(1)
+-- gmg:set_num_presmooth(3)
+-- gmg:set_num_postsmooth(3)
 --gmg:set_rap(true) -- causes error in base solver!!
 --gmg:set_debug(dbgWriter)
 
@@ -370,11 +370,14 @@ while error_fail and n <= adaptive_steps do
 		-- print error and solution to vtu files
 		out_error:print(fileName .. "vtk/error_failed_"..n, u_vtk, 0, 0.0)
 		out:print(fileName .."vtk/solution_failed_"..n, u)
+
+		SaveVectorForConnectionViewer(u_vtk, fileName.."err"..n..".vec")
+		SaveVectorForConnectionViewer(u, fileName.."sol"..n..".vec")
 		
 		-- save failed grid hierarchy
 		---[[
 		SaveGridHierarchyTransformed(dom:grid(), fileName .. "refined_grid_hierarchy_failed"..n.."_p" .. ProcRank() .. ".ugx", 30)
-		SaveParallelGridLayout(dom:grid(), fileName .. "parallel_grid_layout_failed"..n.."_p"..ProcRank()..".ugx", 1)
+		SaveParallelGridLayout(dom:grid(), fileName .. "parallel_grid_layout_failed"..n.."_p"..ProcRank()..".ugx", 2)
 		--]]
 		
 		-- export solution
