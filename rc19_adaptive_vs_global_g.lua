@@ -337,6 +337,13 @@ eeCaER 	= SideAndElemErrEstData(2, 2, erVol)
 eeIP3 	= SideAndElemErrEstData(2, 2, cytVol..", "..nucVol)
 eeClb 	= SideAndElemErrEstData(2, 2, cytVol..", "..nucVol)
 
+eeMult = MultipleSideAndElemErrEstData(approxSpace)
+eeMult:add(eeCaCyt, "ca_cyt")
+eeMult:add(eeCaER, "ca_er")
+eeMult:add(eeIP3, "ip3")
+eeMult:add(eeClb, "clb")
+eeMult:set_consider_me(false) -- not necessary (default)
+
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
@@ -386,13 +393,7 @@ elemDiscBuffering:add_reaction(
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
 
--- error estimator
-eeBuffering = MultipleSideAndElemErrEstData()
-eeBuffering:add(eeClb)
-eeBuffering:add(eeCaCyt)
-eeBuffering:set_consider_me(false)
-
-elemDiscBuffering:set_error_estimator(eeBuffering)
+elemDiscBuffering:set_error_estimator(eeMult)
 
 ----------------------------------------------------
 -- setup inner boundary (channels on ER membrane) --
@@ -429,22 +430,11 @@ innerDiscSERCA:set_density_function("SERCAdensity")
 innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
 innerDiscLeak:set_density_function("LEAKERconstant") -- from mol/(um^2 s M) to m/s
 
--- error estimators
-eeERM = MultipleSideAndElemErrEstData()
-eeERM:add(eeCaCyt)
-eeERM:add(eeCaER)
-eeERM:add(eeIP3)
-eeERM:set_consider_me(false)
 
-eeERMleak = MultipleSideAndElemErrEstData()
-eeERMleak:add(eeCaER)
-eeERMleak:add(eeCaCyt)
-eeERMleak:set_consider_me(false)
-
-innerDiscIP3R:set_error_estimator(eeERM)
-innerDiscRyR:set_error_estimator(eeERM)
-innerDiscSERCA:set_error_estimator(eeERM)
-innerDiscLeak:set_error_estimator(eeERMleak)
+innerDiscIP3R:set_error_estimator(eeMult)
+innerDiscRyR:set_error_estimator(eeMult)
+innerDiscSERCA:set_error_estimator(eeMult)
+innerDiscLeak:set_error_estimator(eeMult)
 
 ------------------------------
 -- setup Neumann boundaries --
@@ -456,14 +446,8 @@ neumannDiscIP3 = UserFluxBoundaryFV1("ip3", plMem)
 neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 
 -- error estimators
-eeNeumannCA = MultipleSideAndElemErrEstData()
-eeNeumannCA:add(eeCaCyt)
-eeNeumannCA:set_consider_me(false)
-neumannDiscCA:set_error_estimator(eeNeumannCA)
-eeNeumannIP3 = MultipleSideAndElemErrEstData()
-eeNeumannIP3:add(eeIP3)
-eeNeumannIP3:set_consider_me(false)
-neumannDiscIP3:set_error_estimator(eeNeumannIP3)
+neumannDiscCA:set_error_estimator(eeMult)
+neumannDiscIP3:set_error_estimator(eeMult)
 
 
 -- plasma membrane transport systems
@@ -505,14 +489,9 @@ neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
 neumannDiscVGCC:set_density_function(vgccDensity)
 
 
--- error estimators
-eePM = MultipleSideAndElemErrEstData()
-eePM:add(eeCaCyt)
-eePM:set_consider_me(false)
-
-neumannDiscPMCA:set_error_estimator(eePM)
-neumannDiscNCX:set_error_estimator(eePM)
-neumannDiscLeak:set_error_estimator(eePM)
+neumannDiscPMCA:set_error_estimator(eeMult)
+neumannDiscNCX:set_error_estimator(eeMult)
+neumannDiscLeak:set_error_estimator(eeMult)
 --neumannDiscVGCC:set_error_estimator(eePM)
 
 ------------------------------------------

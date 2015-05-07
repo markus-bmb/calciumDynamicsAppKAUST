@@ -121,6 +121,15 @@ approxSpace:init_levels()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
+----------------------------
+-- setup error estimators --
+----------------------------
+ee = SideAndElemErrEstData(1, 1, "Inner")
+
+eeMult = MultipleSideAndElemErrEstData(approxSpace)
+eeMult:add(ee, "c")
+eeMult:set_consider_me(false)
+
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
@@ -135,9 +144,9 @@ end
 
 laplaceDisc = ConvectionDiffusion("c", "Inner", "fv1")
 laplaceDisc:set_diffusion(1.0)
+laplaceDisc:set_source(-1.0)
 laplaceDisc:set_upwind(upwind)
 
-ee = SideAndElemErrEstData(2, 2, "Inner")
 laplaceDisc:set_error_estimator(ee)
 
 --[[
@@ -147,20 +156,14 @@ neumannDisc0:set_flux_function(1)
 neumannDisc1 = UserFluxBoundaryFV1("c", "Boundary1")
 neumannDisc1:set_flux_function(-0.2)
 
-eeNeumann0 = MultipleSideAndElemErrEstData()
-eeNeumann0:add(ee)
-eeNeumann0:set_consider_me(false)
-neumannDisc0:set_error_estimator(eeNeumann0)
-eeNeumann1 = MultipleSideAndElemErrEstData()
-eeNeumann1:add(ee)
-eeNeumann1:set_consider_me(false)
-neumannDisc1:set_error_estimator(eeNeumann1)
+neumannDisc0:set_error_estimator(eeMult)
+neumannDisc1:set_error_estimator(eeMult)
 --]]
 
 -- Dirichlet node
 diri = DirichletBoundary()
-diri:add(0, "c", "Boundary0")
-diri:add(1, "c", "Boundary1")
+diri:add(1.0, "c", "Boundary")
+diri:set_error_estimator(eeMult)
 
 ------------------------------------------
 -- setup complete domain discretization --
@@ -286,7 +289,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 
 --- non-linear solver ---
 -- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace, 20, 5e-17, 1e-12)
+newtonConvCheck = CompositeConvCheck(approxSpace, 20, 5e-15, 1e-12)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 newtonConvCheck:set_adaptive(true)
@@ -322,7 +325,7 @@ out:select_all(true)
 --- ADAPTIVE REFINEMENT SETUP ---
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
-TOL = 5e-2			-- maximally tolerated overall error
+TOL = 5e-5			-- maximally tolerated overall error
 refineFrac = 0.01	-- without effect in the current implementation (I believe)
 coarseFrac = 0.9	-- same here
 maxLevel = 6		-- maximal number of adaptive refinement levels
@@ -384,22 +387,25 @@ while error_fail and n <= adaptive_steps do
 		--exportSolution(u, approxSpace, 0, "Inner", "c", fileName.."sol/exp_sol_failed_"..n)
 		
 		-- refine
-		refiner:refine()
-		
-		-- rebalancing (should distribute the geometry evenly among the processors)
-		if loadBalancer ~= nil then
-			print("rebalancing...")
-			balancer.Rebalance(dom, loadBalancer)
-			loadBalancer:create_quality_record("time_".. n)
+		if (n ~= adaptive_steps) then
+			refiner:refine()
+			
+			-- rebalancing (should distribute the geometry evenly among the processors)
+			if loadBalancer ~= nil then
+				print("rebalancing...")
+				balancer.Rebalance(dom, loadBalancer)
+				loadBalancer:create_quality_record("time_".. n)
+			end
+			
+			print(dom:domain_info():to_string())
+				
+			-- error is invalid, since grid has changed
+			domainDisc:invalidate_error()
+			
+			print ("Retrying with refined grid...")
 		end
 		
-		print(dom:domain_info():to_string())
-		
-		-- error is invalid, since grid has changed
-		domainDisc:invalidate_error()
-		
 		n = n+1
-		if n <= adaptive_steps then print ("Retrying with refined grid...") end	
 	else
 		out_error:print(fileName .. "vtk/error_success_"..n, u_vtk, 0, 0.0)
 		out:print(fileName .."vtk/solution_success_"..n, u, 0, 0.0)

@@ -311,6 +311,22 @@ diffusionMatrixClb = LuaUserMatrix2d("ourDiffTensorClb")
 rhs = LuaUserNumber2d("ourRhs")
 
 
+----------------------------
+-- setup error estimators --
+----------------------------
+eeCaCyt = SideAndElemErrEstData(1,4,cytVol)
+eeCaER 	= SideAndElemErrEstData(1,4,erVol)
+eeIP3 	= SideAndElemErrEstData(1,4,cytVol)
+eeClb 	= SideAndElemErrEstData(1,4,cytVol)
+
+eeMult = MultipleSideAndElemErrEstData(approxSpace)
+eeMult:add(eeCaCyt, "ca_cyt")
+eeMult:add(eeCaER, "ca_er")
+eeMult:add(eeIP3, "ip3")
+eeMult:add(eeClb, "clb")
+eeMult:set_consider_me(false) -- not necessary (default)
+
+
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
@@ -345,11 +361,6 @@ elemDiscClb:set_diffusion(diffusionMatrixClb)
 elemDiscClb:set_source(rhs)
 elemDiscClb:set_upwind(upwind)
 
--- error estimators
-eeCaCyt = SideAndElemErrEstData(1,4)
-eeCaER 	= SideAndElemErrEstData(1,4)
-eeIP3 	= SideAndElemErrEstData(1,4)
-eeClb 	= SideAndElemErrEstData(1,4)
 
 elemDiscCYT:set_error_estimator(eeCaCyt)
 elemDiscER:set_error_estimator(eeCaER)
@@ -367,13 +378,7 @@ elemDiscBuffering:add_reaction(
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
 
--- error estimator
-eeBuffering = MultipleSideAndElemErrEstData()
-eeBuffering:add(eeClb)
-eeBuffering:add(eeCaCyt)
-eeBuffering:set_consider_me(false)
-
-elemDiscBuffering:set_error_estimator(eeBuffering)
+elemDiscBuffering:set_error_estimator(eeMult)
 
 ----------------------------------------------------
 -- setup inner boundary (channels on ER membrane) --
@@ -410,49 +415,35 @@ innerDiscSERCA:set_density_function("SERCAdensity")
 innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
 innerDiscLeak:set_density_function("LEAKERconstant") -- from mol/(um^2 s M) to m/s
 
--- error estimators
-eeERM = MultipleSideAndElemErrEstData()
-eeERM:add(eeCaCyt)
-eeERM:add(eeCaER)
-eeERM:add(eeIP3)
-eeERM:set_consider_me(false)
 
-eeERMleak = MultipleSideAndElemErrEstData()
-eeERMleak:add(eeCaER)
-eeERMleak:add(eeCaCyt)
-eeERMleak:set_consider_me(false)
-
-innerDiscIP3R:set_error_estimator(eeERM)
-innerDiscRyR:set_error_estimator(eeERM)
-innerDiscSERCA:set_error_estimator(eeERM)
-innerDiscLeak:set_error_estimator(eeERMleak)
+innerDiscIP3R:set_error_estimator(eeMult)
+innerDiscRyR:set_error_estimator(eeMult)
+innerDiscSERCA:set_error_estimator(eeMult)
+innerDiscLeak:set_error_estimator(eeMult)
 
 ------------------------------
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
+---[[
 neumannDiscCA = UserFluxBoundaryFV1("ca_cyt", plMem)
 neumannDiscCA:set_flux_function("ourNeumannBndCA")
---neumannDiscCA = NeumannBoundary("ca_cyt")
---neumannDiscCA:add("ourNeumannBndCA", plMem, cytVol)
 neumannDiscIP3 = UserFluxBoundaryFV1("ip3", plMem)
 neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
---neumannDiscIP3 = NeumannBoundary("ip3")
---neumannDiscIP3:add("ourNeumannBndIP3", plMem, cytVol)
 
----[[
-eeNeumannCA = MultipleSideAndElemErrEstData()
-eeNeumannCA:add(eeCaCyt)
-eeNeumannCA:set_consider_me(false)
-neumannDiscCA:set_error_estimator(eeNeumannCA)
-eeNeumannIP3 = MultipleSideAndElemErrEstData()
-eeNeumannIP3:add(eeIP3)
-eeNeumannIP3:set_consider_me(false)
-neumannDiscCA:set_error_estimator(eeNeumannIP3)
+neumannDiscCA:set_error_estimator(eeMult)
+neumannDiscCA:set_error_estimator(eeMult)
 --]]
+
+--[[
+neumannDiscCA = NeumannBoundary("ca_cyt")
+neumannDiscCA:add("ourNeumannBndCA", plMem, cytVol)
+neumannDiscIP3 = NeumannBoundary("ip3")
+neumannDiscIP3:add("ourNeumannBndIP3", plMem, cytVol)
+
 --neumannDiscCA:set_error_estimator(eeCaCyt)
 --neumannDiscIP3:set_error_estimator(eeIP3)
-
+--]]
 
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
@@ -493,15 +484,10 @@ neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
 neumannDiscVGCC:set_density_function(vgccDensity)
 
 
--- error estimators
-eePM = MultipleSideAndElemErrEstData()
-eePM:add(eeCaCyt)
-eePM:set_consider_me(false)
-
-neumannDiscPMCA:set_error_estimator(eePM)
-neumannDiscNCX:set_error_estimator(eePM)
-neumannDiscLeak:set_error_estimator(eePM)
-neumannDiscVGCC:set_error_estimator(eePM)
+neumannDiscPMCA:set_error_estimator(eeMult)
+neumannDiscNCX:set_error_estimator(eeMult)
+neumannDiscLeak:set_error_estimator(eeMult)
+neumannDiscVGCC:set_error_estimator(eeMult)
 
 ------------------------------------------
 -- setup complete domain discretization --
