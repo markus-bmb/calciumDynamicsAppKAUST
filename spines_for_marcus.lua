@@ -321,16 +321,16 @@ leakER:set_scale_inputs({1e3,1e3})
 leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 
-innerDiscIP3R = TwoSidedMembraneTransportFV1(erMem, ip3r)
+innerDiscIP3R = MembraneTransportFV1(erMem, ip3r)
 innerDiscIP3R:set_density_function("IP3Rdensity")
 
-innerDiscRyR = TwoSidedMembraneTransportFV1(erMem, ryr)
+innerDiscRyR = MembraneTransportFV1(erMem, ryr)
 innerDiscRyR:set_density_function("RYRdensity")
 
-innerDiscSERCA = TwoSidedMembraneTransportFV1(erMem, serca)
+innerDiscSERCA = MembraneTransportFV1(erMem, serca)
 innerDiscSERCA:set_density_function("SERCAdensity")
 
-innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
+innerDiscLeak = MembraneTransportFV1(erMem, leakER)
 innerDiscLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
 
 ------------------------------
@@ -365,7 +365,7 @@ leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
 					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
 					 "%.3f", ".dat", false)
-vdcc:set_constant(1, 1.5)
+vdcc:set_constant(1, 1.0)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
@@ -373,16 +373,16 @@ vdcc:set_file_times(0.001, 0.0)
 vdcc:init(0.0)
 --]]
 
-neumannDiscPMCA = TwoSidedMembraneTransportFV1(plMem, pmca)
+neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
 
-neumannDiscNCX = TwoSidedMembraneTransportFV1(plMem, ncx)
+neumannDiscNCX = MembraneTransportFV1(plMem, ncx)
 neumannDiscNCX:set_density_function(ncxDensity)
 
-neumannDiscLeak = TwoSidedMembraneTransportFV1(plMem, leakPM)
+neumannDiscLeak = MembraneTransportFV1(plMem, leakPM)
 neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 
---neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
+--neumannDiscVGCC = MembraneTransportFV1(plMem, vdcc)
 --neumannDiscVGCC:set_density_function(vgccDensity)
 
 ------------------------------------------
