@@ -1,8 +1,8 @@
-----------------------------------------------------------------
---  Example script for simulation on 3d spine model	      --
---                                                            --
---  Author: Markus Breit                                      --
-----------------------------------------------------------------
+--------------------------------------------------------------
+--  Example script for simulation on 3d spine model			--
+--                                                          --
+--  Author: Markus Breit                                    --
+--------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(true)

@@ -151,20 +151,19 @@ laplaceDisc:set_error_estimator(ee)
 
 --[[
 -- Neumann bnd
-neumannDisc0 = UserFluxBoundaryFV1("c", "Boundary0")
+neumannDisc0 = UserFluxBoundaryFV1("c", "Boundary")
 neumannDisc0:set_flux_function(1)
-neumannDisc1 = UserFluxBoundaryFV1("c", "Boundary1")
-neumannDisc1:set_flux_function(-0.2)
 
 neumannDisc0:set_error_estimator(eeMult)
 neumannDisc1:set_error_estimator(eeMult)
 --]]
 
+---[[
 -- Dirichlet node
 diri = DirichletBoundary()
 diri:add(1.0, "c", "Boundary")
 diri:set_error_estimator(eeMult)
-
+--]]
 ------------------------------------------
 -- setup complete domain discretization --
 ------------------------------------------

@@ -1,8 +1,8 @@
-----------------------------------------------------------------
---  Example script for simulation on 3d reconstructed neuron  --
---                                                            --
---  Author: Markus Breit                                      --
-----------------------------------------------------------------
+--------------------------------------------------------------
+--  Example script for simulation on 3d spine model			--
+--                                                          --
+--  Author: Markus Breit                                    --
+--------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(false)
@@ -18,16 +18,7 @@ dim = 3
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = util.GetParam("-grid", "rc19/rc19amp.ugx")
---gridName = "rc19/rc19_amp_singleDend.ugx"
---gridName = "rc19/rc19_amp_measZones.ugx"
---gridName = "rc19/rc19_amp_new.ugx"
---gridName = "rc19/rc19_amp.ugx"					-- deprecated
---gridName = "rc19/RC19amp_ug4_finished.ugx"		-- dead
---gridName = "simple_reticulum_3d.ugx"				-- for testing
-
--- refinements before distributing grid
-numPreRefs = util.GetParamNumber("-numPreRefs", 0)
+gridName = util.GetParam("-grid", "reconstructed_spine.ugx")
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs",    0)
@@ -57,38 +48,29 @@ then
 	endTime = nTimeSteps*timeStep
 end
 
--- chose plotting interval
+-- choose plotting interval
 plotStep = util.GetParamNumber("-pstep", 0.01)
 
 -- choose solver setup
 solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
-validSolverIDs["GMG-GS"] = 0
-validSolverIDs["GMG-ILU"] = 0
-validSolverIDs["GMG-LU"] = 0
-validSolverIDs["GMG-SLU"] = 0
---validSolverIDs["AMG-LU"] = 0
-validSolverIDs["GS"] = 0
-validSolverIDs["ILU"] = 0
-validSolverIDs["JAC"] = 0
+validSolverIDs["GMG-GS"] = 0;
+validSolverIDs["GMG-ILU"] = 0;
+validSolverIDs["GMG-LU"] = 0;
+validSolverIDs["GS"] = 0;
+validSolverIDs["ILU"] = 0;
+validSolverIDs["JAC"] = 0;
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
-
--- choose order of synaptic activity
-order = util.GetParamNumber("-synOrder", 0)
-
--- choose time between synaptic stimulations (in ms)
-jump = util.GetParamNumber("-jumpTime", 5)
-
+ 
 -- choose outfile directory
-fileName = util.GetParam("-outName", "rc19test")
+fileName = util.GetParam("-outName", "spine/reconstructed")
 fileName = fileName.."/"
 
 -- specify -vtk to generate vtk output
 generateVTKoutput = util.HasParamOption("-vtk")
-
 
 ---------------
 -- constants --
@@ -108,27 +90,10 @@ k_bind_clb = 	27.0e06
 k_unbind_clb = 	19
 
 -- initial concentrations
-ca_cyt_init = 5.0e-8
+ca_cyt_init = 5.0e-08 --4.0e-8
 ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
-
-
--- calmodulin --
-totalClmd = 2*21.9e-6;
-
--- calmodulin diffusion coefficient
-D_clm = 0.25;
-
--- calmodulin binding rates
-k_bind_clmd_c = 	2.3e06
-k_unbind_clmd_c = 	2.4
-k_bind_clmd_n = 	1.6e08
-k_unbind_clmd_n = 	405.0
-
--- initial concentrations
-clmC_init = totalClmd / (k_bind_clmd_c/k_unbind_clmd_c*ca_cyt_init + 1)
-clmN_init = totalClmd / (k_bind_clmd_n/k_unbind_clmd_n*ca_cyt_init + 1)
 
 
 -- reaction reate IP3
@@ -144,32 +109,12 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 -- functions steering tempo-spatial parameterization of simulation --
 ---------------------------------------------------------------------
 
--- project coordinates on dendritic length from soma (approx.)
-function dendLengthPos(x,y,z)
-	return (0.91*(x-1.35) +0.40*(y+6.4) -0.04*(z+2.9)) / 111.0
-end
-
 function IP3Rdensity(x,y,z,t,si)
-	local dens = math.abs(dendLengthPos(x,y,z))
-	
-	if math.abs(dens) > 1e3 or dens~=dens then
-		print("problem: d = " .. dens .. ". (x="..x..", y="..y..", z="..z..")")
-	end
-	
-	-- fourth order polynomial, distance to soma
-	dens = 1.4 -2.8*dens +6.6*math.pow(dens,2) -7.0*math.pow(dens,3) +2.8*math.pow(dens,4)
-	dens = dens * 17.3
-	-- cluster for branching points
-	if (si==22 or si==23 or si==24) then dens = dens * 10 end 
-	return dens
+	return 17.3
 end
 
 function RYRdensity(x,y,z,t,si)
-	local dens = math.abs(dendLengthPos(x,y,z))
-	-- fourth order polynomial, distance to soma
-	dens = 1.5 -3.5*dens +9.1*math.pow(dens,2) -10.5*math.pow(dens,3) +4.3*math.pow(dens,4)
-	dens = dens * 0.86; 
-	return dens
+	return 0.86
 end
 
 leakERconstant = 3.8e-17
@@ -180,14 +125,15 @@ leakERconstant = 3.8e-17
 function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 3.7606194166520605e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
-	local j_ryr = 1.1204582669024472e-21	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 1.1204582669024472e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
 				+ RYRdensity(x,y,z,t,si) * j_ryr
 				+ leakERconstant * j_leak
 	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
+	
 	return dens
 end
 
@@ -198,42 +144,41 @@ vgccDensity = 1.0
 leakPMconstant = pmcaDensity * 6.967213114754098e-24 +	-- single pump PMCA flux (mol/s)
 				 ncxDensity *  6.7567567567567554e-23 +	-- single pump NCX flux (mol/s)
 				 vgccDensity * (-1.1110712907810124e-28)    -- single channel VGCC flux (mol/s)
-				-- *1.5 // * 0.5 for L-type // T-type
-if leakPMconstant < 0 then error("PM leak flux is outward for these density settings!") end
+				 -- *1.5 // * 0.5 for L-type // T-type
+if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
 
--- firing pattern of the synapses
-syns = {}
-synStart = 6
-synStop = 13
+-- firing pattern of the synapse
+synSubset = 4
+synStartTime = 0.0
 caEntryDuration = 0.01
-if (order==0) then
-	for i=synStart,synStop do
-		syns[i] = jump/1000.0*(i-synStart)
-	end
-else
-	for i=synStart,synStop do
-		syns[i] = jump/1000.0*(synStop-i)
-	end
-end
 
 -- burst of calcium influx for active synapses (~1200 ions)
-function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
-	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
+freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
+nSpikes = 10   -- number of spikes	
+function ourNeumannBndCA(x, y, z, t, si)	
+	-- spike train
+	if (si == synSubset and t <= synStartTime + caEntryDuration + (nSpikes - 1) * 1.0/freq) then
+        t = t % (1.0/freq)
+	end --> now, treat like single spike
+	
+	-- single spike
+	if 	(si == synSubset and synStartTime < t and t <= synStartTime+caEntryDuration)
 	then efflux = -2e-4
 	else efflux = 0.0
 	end
+	
     return -efflux
 end
 
 
--- burst of ip3 at active synapses (triangular, immediate)
+-- burst of ip3 at active synapse (triangular, immediate)
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
+corrFact = -10.4
 function ourNeumannBndIP3(x, y, z, t, si)
-	if 	(si>=synStart and si<=synStop and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
+	if 	(si == synSubset and synStartTime+ip3EntryDelay < t and t <= synStartTime+ip3EntryDelay+ip3EntryDuration)
+	then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-synStartTime)/ip3EntryDuration)
 	else efflux = 0.0
 	end
     return -efflux
@@ -258,7 +203,7 @@ dom = util.CreateDomain(gridName, 0, neededSubsets)
 
 balancer.partitioner = "parmetis"
 ccw = SubsetCommunicationWeights(dom)
-ccw:set_weight_on_subset(10000,4)
+ccw:set_weight_on_subset(10000,3)
 balancer.communicationCostWeights = ccw
 
 balancer.staticProcHierarchy = true
@@ -285,9 +230,9 @@ end
 --[[
 --print("Saving domain grid and hierarchy.")
 --SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
+--SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
 print("Saving parallel grid layout")
-SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 20.0)
+SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
 -- create approximation space
@@ -295,34 +240,12 @@ print("Create ApproximationSpace")
 approxSpace = ApproximationSpace(dom)
 
 cytVol = "cyt"
-measZones = ""
---for i=1,15 do
---	measZones = measZones .. ", measZone" .. i
---end
-cytVol = cytVol .. measZones
-
-nucVol = "nuc"
-nucMem = "mem_nuc"
-
 erVol = "er"
-
-plMem = "mem_cyt"
-plMem_vec = {"mem_cyt"}
-synapses = ""
-for i=1,8 do
-	synapses = synapses .. ", syn" .. i
-	plMem_vec[#plMem_vec+1] = "syn"..i
-end
-plMem = plMem .. synapses
-
+plMem = "mem_cyt, syn"
+plMem_vec = {"mem_cyt", "syn"}
 erMem = "mem_er"
-measZonesERM = "measZoneERM"..1
-for i=2,15 do
-	measZonesERM = measZonesERM .. ", measZoneERM" .. i
-end
-erMem = erMem .. ", " .. measZonesERM
 
-outerDomain = cytVol .. ", " .. nucVol .. ", " .. nucMem .. ", " .. plMem .. ", " .. erMem
+outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
 
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
@@ -337,10 +260,10 @@ approxSpace:print_statistic()
 ----------------------------
 -- setup error estimators --
 ----------------------------
-eeCaCyt = SideAndElemErrEstData(2, 2, cytVol..", "..nucVol)
+eeCaCyt = SideAndElemErrEstData(2, 2, cytVol)
 eeCaER 	= SideAndElemErrEstData(2, 2, erVol)
-eeIP3 	= SideAndElemErrEstData(2, 2, cytVol..", "..nucVol)
-eeClb 	= SideAndElemErrEstData(2, 2, cytVol..", "..nucVol)
+eeIP3 	= SideAndElemErrEstData(2, 2, cytVol)
+eeClb 	= SideAndElemErrEstData(2, 2, cytVol)
 
 eeMult = MultipleSideAndElemErrEstData(approxSpace)
 eeMult:add(eeCaCyt, "ca_cyt")
@@ -367,17 +290,17 @@ elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1")
 elemDiscER:set_diffusion(D_cae)
 elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..", "..nucVol, "fv1")
+elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
 elemDiscCYT:set_diffusion(D_cac)
 elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..", "..nucVol, "fv1")
+elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
 elemDiscIP3:set_diffusion(D_ip3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
 elemDiscIP3:set_upwind(upwind)
 
-elemDiscClb = ConvectionDiffusion("clb", cytVol..", "..nucVol, "fv1")
+elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
 elemDiscClb:set_diffusion(D_clb)
 elemDiscClb:set_upwind(upwind)
 
@@ -453,7 +376,6 @@ neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 neumannDiscCA:set_error_estimator(eeMult)
 neumannDiscIP3:set_error_estimator(eeMult)
 
-
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
 pmca:set_constant(1, 1.5)
@@ -470,14 +392,12 @@ leakPM:set_constant(0, 1.5)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
-vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
-					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
-					 "%.3f", ".dat", false)
+vdcc = VDCC_BG_UserData({"ca_cyt", ""}, plMem_vec, approxSpace)
 vdcc:set_constant(1, 1.5)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
-vdcc:set_file_times(0.001, 0.0)
+vdcc:set_potential_function(-0.065)
 vdcc:init(0.0)
 
 neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
@@ -515,6 +435,7 @@ domainDisc:add(elemDiscBuffering)
 -- (outer) boundary conditions
 domainDisc:add(neumannDiscCA)
 domainDisc:add(neumannDiscIP3)
+
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
@@ -610,7 +531,7 @@ amg:set_base_solver(base)
 -- biCGstab --
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-06)
+convCheck:set_reduction(1e-04)
 convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
 if (solverID == "ILU") then
@@ -670,7 +591,6 @@ dt = timeStepStart
 time = 0.0
 step = 0
 
-
 if (generateVTKoutput) then
 	out = VTKOutput()
 	out:print(fileName .. "vtk/result", u, step, time)
@@ -698,7 +618,7 @@ out_error:clear_selection()
 out_error:select_all(false)
 out_error:select_element("eta_squared", "error")
 
-takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+--takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -712,7 +632,7 @@ newTime = true
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
 lv = startLv
-levelUpDelay = (synStop-synStart)*jump/1000.0 + caEntryDuration;
+levelUpDelay = caEntryDuration;
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
@@ -914,7 +834,7 @@ while endTime-time > 0.001*dt do
 			end
 		
 			-- take measurements every timeStep seconds 
-			takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+			--takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 			
 			-- get oldest solution
 			oldestSol = solTimeSeries:oldest()
