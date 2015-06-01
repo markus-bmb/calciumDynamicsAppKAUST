@@ -609,14 +609,13 @@ space_refine_ind = 0.0
 time_refine_ind = 0.0
 
 
-outRefinement = VTKOutput()
-approxSpace_vtk = ApproximationSpace(dom)
-approxSpace_vtk:add_fct("eta_squared", "piecewise-constant");
-u_vtk = GridFunction(approxSpace_vtk)
-out_error = VTKOutput()
-out_error:clear_selection()
-out_error:select_all(false)
-out_error:select_element("eta_squared", "error")
+--approxSpace_vtk = ApproximationSpace(dom)
+--approxSpace_vtk:add_fct("eta_squared", "piecewise-constant");
+--u_vtk = GridFunction(approxSpace_vtk)
+--out_error = VTKOutput()
+--out_error:clear_selection()
+--out_error:select_all(false)
+--out_error:select_element("eta_squared", "error")
 
 --takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
@@ -678,10 +677,11 @@ while endTime-time > 0.001*dt do
 		-- timeDisc:mark_error(new solution, refiner, tolerance for total squared l2 error,
 		--					   refinement fraction of max error, coarsening fraction (-1) of min error,
 		--					   max #refinements)
+		timeDisc:calc_error(u)
 		timeDisc:calc_error(u, u_vtk)
-		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-			out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
-		end
+		--if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
+		--	out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
+		--end
 		
 		changedGrid = false
 		
@@ -855,7 +855,7 @@ if loadBalancer ~= nil then
 	loadBalancer:print_quality_records()
 end
 
-out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
+--out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
 
 -- end timeseries, produce gathering file
 if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
