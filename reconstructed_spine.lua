@@ -678,7 +678,7 @@ while endTime-time > 0.001*dt do
 		--					   refinement fraction of max error, coarsening fraction (-1) of min error,
 		--					   max #refinements)
 		timeDisc:calc_error(u)
-		timeDisc:calc_error(u, u_vtk)
+		--timeDisc:calc_error(u, u_vtk)
 		--if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
 		--	out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
 		--end
