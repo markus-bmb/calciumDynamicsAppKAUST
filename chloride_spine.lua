@@ -94,18 +94,12 @@ chlEntryDuration = 0.01
 -- burst of chloride influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > chlEntryDuration must hold)
 nSpikes = 1   -- number of spikes	
-function ourNeumannBndCA(x, y, z, t, si)	
-	-- spike train
-	if (si == synSubset and t <= synStartTime + chlEntryDuration + (nSpikes - 1) * 1.0/freq) then
-        t = t % (1.0/freq)
-	end --> now, treat like single spike
-	
-	-- single spike
-	if 	(si == synSubset and synStartTime < t and t <= synStartTime+chlEntryDuration)
-	then efflux = -2e-4
-	else efflux = 0.0
-	end
-	
+function ourNeumannBndCA(x, y, z, t, si)    
+    if (synStartTime < t and t <= synStartTime+chlEntryDuration)
+    then efflux = -2e1 -- -2e6
+    else efflux = 0.0
+    end
+    
     return -efflux
 end
 
@@ -168,6 +162,13 @@ cytVol = "cyt"
 plMem = "mem_cyt, syn"
 plMem_vec = {"mem_cyt", "syn"}
 
+-- collect several subset names in subdomain variables
+measZones = "measZone"..1
+for i=2,3 do
+	measZones = measZones .. ", measZone" .. i
+end
+cytVol = cytVol .. ", " .. measZones
+
 outerDomain = cytVol .. ", " .. plMem
 
 approxSpace:add_fct("chl_cyt", "Lagrange", 1, outerDomain)
@@ -175,6 +176,8 @@ approxSpace:add_fct("chl_cyt", "Lagrange", 1, outerDomain)
 approxSpace:init_levels()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
+
+OrderCuthillMcKee(approxSpace, true);
 
 ----------------------------
 -- setup error estimators --
@@ -210,7 +213,7 @@ elemDiscCYT:set_error_estimator(eeChlCyt)
 -- setup Neumann boundaries --
 ------------------------------
 -- synaptic activity
-neumannDiscCA = UserFluxBoundaryFV1("chl_cyt", plMem)
+neumannDiscCA = UserFluxBoundaryFV1("chl_cyt", "syn")
 neumannDiscCA:set_flux_function("ourNeumannBndCA")
 
 neumannDiscCA:set_error_estimator(eeMult)
@@ -352,7 +355,7 @@ amg:set_base_solver(base)
 -- biCGstab --
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-24)
-convCheck:set_reduction(1e-04)
+convCheck:set_reduction(1e-08)
 convCheck:set_verbose(false)
 bicgstabSolver = BiCGStab()
 if (solverID == "ILU") then
@@ -370,6 +373,11 @@ else
 end
 bicgstabSolver:set_convergence_check(convCheck)
 
+cgSolver = CG()
+cgSolver:set_preconditioner(ilu)
+cgSolver:set_convergence_check(convCheck)
+
+
 -----------------------
 -- non linear solver --
 -----------------------
@@ -386,6 +394,7 @@ newtonLineSearch:set_verbose(false)
 
 -- Newton solver
 newtonSolver = NewtonSolver()
+--newtonSolver:set_linear_solver(cgSolver)
 newtonSolver:set_linear_solver(bicgstabSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_line_search(newtonLineSearch)
@@ -413,9 +422,13 @@ if (generateVTKoutput) then
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
+-- taking an initial measurement of all unknwons in all measurement zones on the ER membrane
+-- the folder "meas" must exist in your file output directory specified in fileName
+takeMeasurement(u, time, measZones, "chl_cyt", fileName .. "meas/data")
+
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
-TOL = 1e-14
+TOL = 1
 refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
@@ -448,22 +461,12 @@ newTime = true
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
 lv = startLv
-levelUpDelay = caEntryDuration;
+levelUpDelay = chlEntryDuration;
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
 	if newTime then
 		print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
-		newTime = false
-		numCoarsenOld = -1.0;
-		n=0
-	end
-	
-	-- rebalancing
-	if loadBalancer ~= nil then
-		print("rebalancing...")
-		balancer.Rebalance(dom, loadBalancer)
-		loadBalancer:create_quality_record("time_".. math.floor((time+dt)/dt+0.5)*dt)
 	end
 	
 	-- setup time Disc for old solutions and timestep
@@ -488,47 +491,16 @@ while endTime-time > 0.001*dt do
 	if newtonSolver:apply(u) == false then
 		-- in case of Newton convergence failure:
 		newton_fail = true
-		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
-	else
-		-- check error
-		-- timeDisc:mark_error(new solution, refiner, tolerance for total squared l2 error,
-		--					   refinement fraction of max error, coarsening fraction (-1) of min error,
-		--					   max #refinements)
-		timeDisc:calc_error(u)
-		--if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-		--	out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
-		--end
-		
-		changedGrid = false
-		
-		-- refining
-		timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
-		if refiner:num_marked_elements() > 0 then
-			error_fail = true
-			print ("Error estimator is above required error.")
-		end
-	end	
+		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)	
+	end
 	
 	if (error_fail or newton_fail)
 	then
-		print ("refinement score (time/space): " .. time_refine_ind .." / " .. space_refine_ind)
-		if (time_refine_ind > space_refine_ind or not timeDisc:is_error_valid())
-		then
-			-- TIME STEP ADJUSTMENT ------------------------------------------------
-			
-			-- clear marks in the case where they might have been set (no newton_fail)
-			refiner:clear_marks()
-			
-			-- correction for Borg-Graham channels: have to set back time
-			--neumannDiscVGCC:update_gating(time)
-			
+		-- TIME STEP ADJUSTMENT ------------------------------------------------
 			dt = dt/2
 			lv = lv + 1
 			VecScaleAssign(u, 1.0, solTimeSeries:latest())
-			
-			-- error is invalid, since time step has changed
-			timeDisc:invalidate_error()
-			
+
 			-- halve time step and try again unless time step below minimum
 			if dt < min_dt
 			then 
@@ -538,131 +510,46 @@ while endTime-time > 0.001*dt do
 				print ("Retrying with half the time step...")
 				cb_counter[lv] = 0
 			end
-			-------------------------------------------------------------------
-			time_refine_ind = time_refine_ind / 2
-		else
-			-- GRID REFINEMENT ------------------------------------------------
-		
-			-- if too many elements: 
-			numElemBeforeRefinement = dom:domain_info():num_elements()
-			if (numElemBeforeRefinement > maxElem) then
-				print ("Adaptive refinement failed - too many elements. Aborting.")
-				print ("Failed at point in time " .. time .. ".")
-				time = endTime
-			else
-				if newton_fail then
-					timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
-				end
-				adaptTolerance = 1.0;
-				while (refiner:num_marked_elements() == 0) do
-					adaptTolerance = adaptTolerance*0.1
-					timeDisc:mark_for_refinement(refiner, TOL*adaptTolerance, refineFrac, maxLevel)
-				end
-				refiner:refine()
-				refiner:clear_marks()
-				
-				--SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
-				--SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_n".. n+1 .."_p"..ProcRank()..".ugx", 20.0)
-				
-				if (adaptTolerance < 1.0) then
-					print ("Adaptive refinement tolerance has temporarily been reduced to "
-						   .. TOL*adaptTolerance .. " in order to mark elements for refinement.")
-				end
-				
-				numElemAfterRefinement = dom:domain_info():num_elements()
-				space_refine_ind = space_refine_ind * numElemBeforeRefinement / numElemAfterRefinement;
-				
-				-- error is invalid, since grid has changed
-				timeDisc:invalidate_error()
-				
-				--SaveDomain(dom, "refined_grid_".. math.floor((time+dt)/dt+0.5)*dt .. "_" .. n ..".ugx")
-				n = n+1
-				
-				-- solve again on adapted grid
-				VecScaleAssign(u, 1.0, solTimeSeries:latest())
-				
-				print ("Retrying with refined grid...")
-			end
-			-------------------------------------------------------------------
-		end
 	else
-		-- GRID COARSENING ------------------------------------------------
-		
-		timeDisc:mark_for_coarsening(refiner, TOL, coarseFrac, maxLevel)
-		numElemBeforeCoarsening = dom:domain_info():num_elements()
-		numCoarsenNew = refiner:num_marked_elements()
-		if (numCoarsenNew >= numElemBeforeCoarsening/5
-		   and (numCoarsenNew < 0.8*numCoarsenOld or numCoarsenOld < 0)) then
-			refiner:coarsen()
-			numCoarsenOld = numCoarsenNew
+		-- NORMAL PROCEEDING ----------------------------------------------
+
+		-- update new time
+		time = solTimeSeries:time(0) + dt
+		newTime = true
+	
+		-- update check-back counter and if applicable, reset dt
+		cb_counter[lv] = cb_counter[lv] + 1
+		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
+			dt = 2*dt;
+			lv = lv - 1
+			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
+			cb_counter[lv+1] = 0
 		end
-		numElemAfterCoarsening = dom:domain_info():num_elements()
 		
-		refiner:clear_marks()
-		
-		-- grid is changed iff number of elements is different than before
-		if (numElemAfterCoarsening ~= numElemBeforeCoarsening) then
-			space_refine_ind = space_refine_ind * numElemBeforeCoarsening / numElemAfterCoarsening;
-			
-			-- error is invalid, since grid has changed
-			timeDisc:invalidate_error()
-			
-			--SaveDomain(dom, "refined_grid_".. math.floor((time+dt)/dt+0.5)*dt .. "_" .. n ..".ugx")
-			n = n+1
-			
-			-- solve again on adapted grid
-			VecScaleAssign(u, 1.0, solTimeSeries:latest())
-			
-			print ("Error estimator is below required error.")
-			print ("Retrying with coarsened grid...")
-		-------------------------------------------------------------------
-		else
-			-- NORMAL PROCEEDING ----------------------------------------------
-		
-			-- on first success, init the refinement indicators
-			if (time_refine_ind == 0) then
-				time_refine_ind = 1.0	-- first refine will be in time, then in space
-				space_refine_ind = 4.0			
+		-- plot solution every plotStep seconds
+		if (generateVTKoutput) then
+			if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
+				out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
 			end
-			
-			numCoarsenOld = -1.0;
-			
-			-- update new time
-			time = solTimeSeries:time(0) + dt
-			newTime = true
-		
-			-- update check-back counter and if applicable, reset dt
-			cb_counter[lv] = cb_counter[lv] + 1
-			while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
-				print ("Doubling time due to continuing convergence; now: " .. 2*dt)
-				dt = 2*dt;
-				lv = lv - 1
-				cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
-				cb_counter[lv+1] = 0
-				time_refine_ind = time_refine_ind * 2
-			end
-			
-			-- plot solution every plotStep seconds
-			if (generateVTKoutput) then
-				if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-					out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
-				end
-			end
-		
-			-- take measurements every timeStep seconds 
-			--takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
-			
-			-- get oldest solution
-			oldestSol = solTimeSeries:oldest()
-			
-			-- copy values into oldest solution (we reuse the memory here)
-			VecScaleAssign(oldestSol, 1.0, u)
-			
-			-- push oldest solutions with new values to front, oldest sol pointer is popped from end
-			solTimeSeries:push_discard_oldest(oldestSol, time)
-			
-			print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
 		end
+	
+		-- take measurements in measurement zones
+		takeMeasurement(u, time, measZones, "chl_cyt", fileName .. "meas/data")	
+	
+		-- take measurements every timeStep seconds 
+		--takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+		
+		-- get oldest solution
+		oldestSol = solTimeSeries:oldest()
+		
+		-- copy values into oldest solution (we reuse the memory here)
+		VecScaleAssign(oldestSol, 1.0, u)
+		
+		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
+		solTimeSeries:push_discard_oldest(oldestSol, time)
+		
+		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
 	end
 end
 
