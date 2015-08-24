@@ -81,6 +81,7 @@ D_chl = 2000.0
 
 -- initial concentrations
 chl_cyt_init = 5.0e-03 --4.0e-8
+chl_influx = 10.0e-03
 
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
@@ -96,7 +97,7 @@ freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > chlEntryDuratio
 nSpikes = 1   -- number of spikes	
 function ourNeumannBndCA(x, y, z, t, si)    
     if (synStartTime < t and t <= synStartTime+chlEntryDuration)
-    then efflux = -2e1 -- -2e6
+    then efflux = 0.0 -- -2e6
     else efflux = 0.0
     end
     
@@ -158,16 +159,17 @@ SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx",
 print("Create ApproximationSpace")
 approxSpace = ApproximationSpace(dom)
 
-cytVol = "cyt"
+--cytVol = "cyt"
 plMem = "mem_cyt, syn"
 plMem_vec = {"mem_cyt", "syn"}
 
 -- collect several subset names in subdomain variables
 measZones = "measZone"..1
-for i=2,3 do
+for i=2,201 do
 	measZones = measZones .. ", measZone" .. i
 end
-cytVol = cytVol .. ", " .. measZones
+--cytVol = cytVol .. ", " .. measZones
+cytVol = measZones
 
 outerDomain = cytVol .. ", " .. plMem
 
@@ -382,7 +384,7 @@ cgSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 20, 1e-20, 1e-08)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 20, 1e-16, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 newtonConvCheck:set_adaptive(true)
@@ -409,7 +411,10 @@ newtonSolver:init(op)
 u = GridFunction(approxSpace)
 
 -- set initial value
+Interpolate(chl_influx, u, "chl_cyt", "measZone101" , 0.0)
 Interpolate(chl_cyt_init, u, "chl_cyt", 0.0)
+Interpolate(chl_influx, u, "chl_cyt", "measZone101" , 0.0)
+
 
 
 -- timestep in seconds
