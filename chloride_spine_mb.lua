@@ -259,13 +259,13 @@ while endTime-time > 0.001*dt do
 	-- assemble linear problem
 	matrixIsConst = dtChanged == false
 	assTuner:set_matrix_is_const(matrixIsConst)
-	if AssembleLinearOperatorRhsAndSolution(linOp, u, b) == false then 
+	if AssembleLinearOperatorRhsAndSolution(op, u, b) == false then 
 		print("Could not assemble operator"); exit(); 
 	end
 	
 	-- apply linear solver
 	ilu:set_disable_preprocessing(matrixIsConst)
-	if ApplyLinearSolver(linOp, u, b, cgSolver) == false then
+	if ApplyLinearSolver(op, u, b, cgSolver) == false then
 		dtChanged = true
 		
 		curr_dt = curr_dt/dtred
