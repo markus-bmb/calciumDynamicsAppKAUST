@@ -40,7 +40,7 @@ InitUG(dim, AlgebraType("CPU", 1));
 --    BuildDendrite(0.21, 0.062, 6.0, 3, 0.04, 0.56, 0.053, 0.18, 0.125, 0.7, 0.225, 0.60, "bigheadwideapp4.ugx")
 --    BuildDendrite(0.45, 0.11, 10.0, 5, 0.01, 0.01, 0.0, 0.0, 0.074, 0.667, 0.186, 0.519, "paperERproto1.ugx")
 --    BuildDendrite(0.45, 0.11, 10.0, 5.0, 0.028, 0.94, 0.03, 0.12, 0.074, 0.667, 0.186, 0.519, "paperSAproto1.ugx")
-    BuildDendrite_Vector({0.45, 0.11, 10.0, 5.0, 0.028, 0.94, 0.03, 0.12, 0.074, 0.667, 0.186, 0.519}, {true, true, true}, "dendrite.ugx")
+    BuildDendrite({0.45, 0.11, 10.0, 5.0, 0.028, 0.94, 0.03, 0.12, 0.074, 0.667, 0.186, 0.519}, {true, true, true, false}, "dendrite.ugx")
     
 --    configurator = BDC("dendrite.ugx")
 --    configurator.set_cyt_rad(2.0)
