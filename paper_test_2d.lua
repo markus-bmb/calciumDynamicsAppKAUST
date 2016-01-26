@@ -656,6 +656,12 @@ end
 
 refiner = HangingNodeDomainRefiner(dom)
 
+TOL = 1e-15
+maxLevel = 6
+refStrat = StdRefinementMarking(TOL, maxLevel)
+coarsStrat = StdCoarseningMarking(TOL)
+
+
 outRefinement = VTKOutput()
 approxSpace_vtk = ApproximationSpace(dom)
 approxSpace_vtk:add_fct("eta_squared", "piecewise-constant");
@@ -743,7 +749,7 @@ while endTime-time > 0.001*dt do
 		changedGrid = false
 		
 		-- refining
-		timeDisc:mark_for_refinement(refiner, 1e-15, 0.01, 6)
+		domainDisc:mark_with_strategy(refiner, refStrat)
 		if refiner:num_marked_elements() > 0 then
 			refiner:refine()
 			refiner:clear_marks()
@@ -751,7 +757,7 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- coarsening
-		timeDisc:mark_for_coarsening(refiner, 1e-15, 0.9, 6)
+		domainDisc:mark_with_strategy(refiner, coarsStrat)
 		numElem = dom:domain_info():num_elements()
 		numCoarsenNew = refiner:num_marked_elements()
 		if numCoarsenNew > 0

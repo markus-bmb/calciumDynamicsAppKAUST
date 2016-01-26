@@ -683,6 +683,7 @@ refineFrac = 0.01
 coarseFrac = 0.9
 maxLevel = 6
 maxElem = 1e8
+refStrat = StdRefinementMarking(TOL, maxLevel)
 
 -- set indicators for refinement in space and time to 0
 space_refine_ind = 0.0
@@ -756,7 +757,7 @@ while endTime-time > 0.001*dt do
 		changedGrid = false
 		
 		-- refining
-		timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+		domainDisc:mark_with_strategy(refiner, refStrat)
 		if refiner:num_marked_elements() > 0 then
 			refiner:clear_marks()
 			error_fail = true

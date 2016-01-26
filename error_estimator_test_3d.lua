@@ -637,10 +637,11 @@ end
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
 TOL = 1e-14
-refineFrac = 0.01
-coarseFrac = 0.9
 maxLevel = 6
 maxElem = 50000
+refStrat = StdRefinementMarking(TOL, maxLevel)
+coarsStrat = StdCoarseningMarking(TOL)
+
 
 -- set indicators for refinement in space and time to 0
 space_refine_ind = 0.0
@@ -719,7 +720,7 @@ while endTime-time > 0.001*dt do
 		changedGrid = false
 		
 		-- refining
-		timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+		domainDisc:mark_with_strategy(refiner, refStrat)
 		if refiner:num_marked_elements() > 0 then
 			error_fail = true
 			print ("Error estimator is above required error.")
@@ -768,12 +769,13 @@ while endTime-time > 0.001*dt do
 				time = endTime
 			else
 				if newton_fail then
-					timeDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+					domainDisc:mark_with_strategy(refiner, refStrat)
 				end
 				adaptTolerance = 1.0;
 				while (refiner:num_marked_elements() == 0) do
 					adaptTolerance = adaptTolerance*0.1
-					timeDisc:mark_for_refinement(refiner, TOL*adaptTolerance, refineFrac, maxLevel)
+					refStrat:set_tolerance(TOL*adaptTolerance)
+					domainDisc:mark_with_strategy(refiner, refStrat)
 				end
 				refiner:refine()
 				refiner:clear_marks()
@@ -802,7 +804,7 @@ while endTime-time > 0.001*dt do
 	else
 		-- GRID COARSENING ------------------------------------------------
 		
-		timeDisc:mark_for_coarsening(refiner, TOL, coarseFrac, maxLevel)
+		domainDisc:mark_with_strategy(refiner, coarsStrat)
 		numElemBeforeCoarsening = dom:domain_info():num_elements()
 		numCoarsenNew = refiner:num_marked_elements()
 		if (numCoarsenNew >= numElemBeforeCoarsening/5

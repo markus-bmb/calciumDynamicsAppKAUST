@@ -324,10 +324,8 @@ out:select_all(true)
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
 TOL = 5e-5			-- maximally tolerated overall error
-refineFrac = 0.01	-- without effect in the current implementation (I believe)
-coarseFrac = 0.9	-- same here
-maxLevel = 6		-- maximal number of adaptive refinement levels
-maxElem = 1e10		-- maximal number of elements in the geometry
+maxLevel = 7		-- maximal number of adaptive refinement levels
+refStrat = StdRefinementMarking(TOL, maxLevel)
 
 -- for visualization of adaptive refinement:
 -- the outError can be used to write vtu files containing the error indicator
@@ -360,7 +358,7 @@ while error_fail and n <= adaptive_steps do
 	domainDisc:calc_error(u, u_vtk)
 	
 	-- mark elements with high indicator for refinement
-	domainDisc:mark_for_refinement(refiner, TOL, refineFrac, maxLevel)
+	domainDisc:mark_with_strategy(refiner, refStrat)
 	if refiner:num_marked_elements() > 0 then
 		error_fail = true
 		print ("Error estimator is above required error.")
