@@ -201,8 +201,7 @@ gs = GaussSeidel()
 sgs = SymmetricGaussSeidel()
 bgs = BackwardGaussSeidel()
 ilu = ILU()
---iluc = ILUC(approxSpace)
---iluc:add_constraint(adapt_constraint)
+--iluc = ILU_c(domainDisc)
 ilut = ILUT(1e-4)
 
 -- exact solver
