@@ -88,7 +88,7 @@ fileName = fileName .. var .. "/"
 ---------------
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
-totalClb = 4*40.0e-6
+totalClb = 40.0e-6 --4*40.0e-6
 
 -- diffusion coefficients
 D_cac = 220.0
@@ -121,15 +121,15 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- density function for IP3R channels in the ER/spine apparatus membrane
 function IP3Rdensity(x,y,z,t,si)
-	return 17.3
+	return 0.0    --17.3 --23.0
 end
 
 -- density function for RyR channels in the ER/spine apparatus membrane
 function RYRdensity(x,y,z,t,si)
 	-- no ryrs in spine apparatus membrane
 	-- (as it turns out, there might yet be RyRs in the spine apparatus, so do not hesitate to deactivate this condition)
-	if (si == 8) then return 0.0 end
-	return 0.86
+    -- if (si == 5) then return 0.0 end
+	return 0.0     --0.86 --4.3
 end
 
 -- function for ER/spine apparatus membrane leakage flux density
@@ -142,8 +142,8 @@ leakERconstant = 3.8e-17
 function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
-	local j_ryr = 1.1204582669024472e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_ip3r = 3.76061941665206046e-23--19221417031140517651389721685736640897416396996100207417157434974797070026397705078125e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 1.1204582669024472e-21--1439377961145350764561143314491273008872578888228677129745847196318209171295166015625e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
@@ -169,14 +169,14 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 syns = {}
 synStart = 6
 synStop = 6
-caEntryDuration = 0.01
+caEntryDuration = 0.001 --0.002
 for i=synStart,synStop do
 	syns[i] = 0.005*(i-synStart)
 end
 
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
-nSpikes = 10   -- number of spikes	
+nSpikes = 1   -- number of spikes	
 function ourNeumannBndCA(x, y, z, t, si)	
 	-- spike train
 	if (si>=synStart and si<=synStop and t <= syns[si] + caEntryDuration + (nSpikes - 1) * 1.0/freq) then
@@ -185,7 +185,7 @@ function ourNeumannBndCA(x, y, z, t, si)
 	
 	-- single spike
 	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
-	then influx = 2e-4
+	then influx = 8e-3    --2e-4
 	else influx = 0.0
 	end
 	
@@ -240,11 +240,14 @@ for i=2,3 do
 end
 cytVol = cytVol .. ", " .. measZones
 
+--APP
 erVol = "er, app"
+--erVol = "er"
 
 plMem = "mem_cyt, syn"
 
 erMem = "mem_er, mem_app"
+--erMem = "mem_er"
 
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
@@ -308,7 +311,8 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
-ryr = RyR({"ca_cyt", "ca_er"})
+ryr = RyR("ca_cyt, ca_er")
+--ryr = RyR2("ca_cyt, ca_er", erMem, approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
@@ -511,7 +515,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-20, 1e-10)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 
