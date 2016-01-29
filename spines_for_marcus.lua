@@ -88,7 +88,7 @@ fileName = fileName .. var .. "/"
 ---------------
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
-totalClb = 40.0e-6 --4*40.0e-6
+totalClb = 10.0e-6 --4*40.0e-6 --10 for paper
 
 -- diffusion coefficients
 D_cac = 220.0
@@ -121,7 +121,7 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- density function for IP3R channels in the ER/spine apparatus membrane
 function IP3Rdensity(x,y,z,t,si)
-	return 0.0    --17.3 --23.0
+	return 30.0    --17.3 --23.0
 end
 
 -- density function for RyR channels in the ER/spine apparatus membrane
@@ -234,10 +234,7 @@ approxSpace = ApproximationSpace(dom)
 
 -- collect several subset names in subdomain variables
 cytVol = "cyt"
-measZones = "measZone"..1
-for i=2,3 do
-	measZones = measZones .. ", measZone" .. i
-end
+measZones = "measZone_dend, measZone_head, measZone_neck"
 cytVol = cytVol .. ", " .. measZones
 
 --APP
@@ -311,8 +308,8 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
-ryr = RyR("ca_cyt, ca_er")
---ryr = RyR2("ca_cyt, ca_er", erMem, approxSpace)
+--ryr = RyR("ca_cyt, ca_er")
+ryr = RyR2("ca_cyt, ca_er", erMem, approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
