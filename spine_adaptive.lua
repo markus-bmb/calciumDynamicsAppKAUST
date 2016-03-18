@@ -19,19 +19,19 @@ InitUG(dim, AlgebraType("CPU", 1));
 -- choice of grid
 gridID = util.GetParam("-grid", "ns")
 if (gridID == "ns") then
-	gridName = "spines/normSpine.ugx"
+	gridName = "../data/grids/spines/normSpine.ugx"
 elseif (gridID == "ma") then
-	gridName = "spines/movedApp.ugx"
+	gridName = "../data/grids/spines/movedApp.ugx"
 elseif (gridID == "bs") then
-	gridName = "spines/bigSpine.ugx"
+	gridName = "../data/grids/spines/bigSpine.ugx"
 elseif (gridID == "bsma") then
-	gridName = "spines/bigSpineMovedApp.ugx"
+	gridName = "../data/grids/spines/bigSpineMovedApp.ugx"
 elseif (gridID == "bsba") then
-	gridName = "spines/bigSpineBigApp.ugx"
+	gridName = "../data/grids/spines/bigSpineBigApp.ugx"
 elseif (gridID == "bsbma") then
-	gridName = "spines/bigSpineBigMovedApp.ugx"
+	gridName = "../data/grids/spines/bigSpineBigMovedApp.ugx"
 elseif (gridID == "ld") then
-	gridName = "spines/longDend.ugx"
+	gridName = "../data/grids/spines/longDend.ugx"
 else error("Unknown grid identifier " .. gridID)
 end	
 
@@ -318,9 +318,12 @@ plMem = "mem_cyt, syn"
 plMem_vec = {"mem_cyt", "syn"}
 
 erMem = "mem_er, mem_app"
+erMemVec = {"mem_er", "mem_app"}
 measZonesERM = "measZoneERM"..1
+erMemVec[#erMemVec + 1] = "measZoneERM"..1
 for i=2,3 do
 	measZonesERM = measZonesERM .. ", measZoneERM" .. i
+	erMemVec[#erMemVec + 1] = "measZoneERM"..i
 end
 erMem = erMem .. ", " .. measZonesERM
 
@@ -334,7 +337,7 @@ approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 --approxSpace:add_fct("clm_c", "Lagrange", 1, outerDomain)
 --approxSpace:add_fct("clm_n", "Lagrange", 1, outerDomain)
 
-approxSpace:init_levels()
+approxSpace:init_top_surface()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
@@ -444,6 +447,7 @@ ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 ryr = RyR({"ca_cyt", "ca_er"})
+--ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
