@@ -222,7 +222,7 @@ weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 --]]
 
-dom = util.CreateDomain(gridName, 0)
+dom = util.CreateDomain("../data/grids/spines/var1.ugx", 0)
 balancer.partitioner = "parmetis"
 ccw = SubsetCommunicationWeights(dom)
 -- protect ER membrane from being cut by partitioning
