@@ -121,7 +121,7 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- density function for IP3R channels in the ER/spine apparatus membrane
 function IP3Rdensity(x,y,z,t,si)
-	return 30.0    --17.3 --23.0
+	return 0.0    --17.3 --23.0
 end
 
 -- density function for RyR channels in the ER/spine apparatus membrane
@@ -257,6 +257,8 @@ approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 
 -- initialize approximation space and output some information
 approxSpace:init_levels()
+approxSpace:init_surfaces();
+approxSpace:init_top_surface();
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
@@ -308,8 +310,8 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
---ryr = RyR("ca_cyt, ca_er")
-ryr = RyR2("ca_cyt, ca_er", erMem, approxSpace)
+ryr = RyR("ca_cyt, ca_er")
+--ryr = RyR2("ca_cyt, ca_er", approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
@@ -413,6 +415,7 @@ domainDisc:add(neumannDiscLeak)
 --domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
+-- comment out to remove ca flux
 domainDisc:add(innerDiscIP3R)
 domainDisc:add(innerDiscRyR)
 domainDisc:add(innerDiscSERCA)
