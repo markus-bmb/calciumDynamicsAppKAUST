@@ -7,6 +7,7 @@
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
+ug_load_script("util/load_balancing_util.lua")
 
 -- dimension
 dim = 3
@@ -212,13 +213,56 @@ end
 -- create, load, refine and distribute domain
 -- (the distribution method is only needed for parallel execution and prevents cutting the domain along a membrane)
 
-print("create, refine and distribute domain")
+--[[ -- does not work atm.
 neededSubsets = {}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
-dom = util.CreateAndDistributeDomain(gridName .. var .. ".ugx", numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+--]]
+
+dom = util.CreateDomain(gridName, 0)
+balancer.partitioner = "parmetis"
+ccw = SubsetCommunicationWeights(dom)
+-- protect ER membrane from being cut by partitioning
+ccw:set_weight_on_subset(1000.0, 4) -- mem_er
+ccw:set_weight_on_subset(1000.0, 5) -- mem_app
+balancer.communicationWeights = ccw
+
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl		= -1
+balancer.redistSteps		= 0
+
+balancer.ParseParameters()
+balancer.PrintParameters()
+
+-- in parallel environments: use a load balancer to distribute the grid
+-- actual refinement and load balancing after setup of disc.
+loadBalancer = balancer.CreateLoadBalancer(dom)
+
+-- refining and distributing
+-- manual refinement (need to update interface node location in each step)
+if loadBalancer ~= nil then
+	balancer.Rebalance(dom, loadBalancer)
+end
+
+if numRefs > 0 then	
+	refiner = GlobalDomainRefiner(dom)
+	
+	for i = 1, numRefs do
+		TerminateAbortedRun()
+		refiner:refine()
+		TerminateAbortedRun()
+	end
+end
+
+if loadBalancer ~= nil then
+	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
+	loadBalancer:estimate_distribution_quality()
+	loadBalancer:print_quality_records()
+end
+print(dom:domain_info():to_string())
 
 --[[
 --print("Saving domain grid and hierarchy.")

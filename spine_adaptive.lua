@@ -9,6 +9,7 @@
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
+ug_load_script("util/load_balancing_util.lua")
 
 -- dimension
 dim = 3
@@ -19,19 +20,19 @@ InitUG(dim, AlgebraType("CPU", 1));
 -- choice of grid
 gridID = util.GetParam("-grid", "ns")
 if (gridID == "ns") then
-	gridName = "spines/normSpine.ugx"
+	gridName = "../data/grids/spines/normSpine.ugx"
 elseif (gridID == "ma") then
-	gridName = "spines/movedApp.ugx"
+	gridName = "../data/grids/spines/movedApp.ugx"
 elseif (gridID == "bs") then
-	gridName = "spines/bigSpine.ugx"
+	gridName = "../data/grids/spines/bigSpine.ugx"
 elseif (gridID == "bsma") then
-	gridName = "spines/bigSpineMovedApp.ugx"
+	gridName = "../data/grids/spines/bigSpineMovedApp.ugx"
 elseif (gridID == "bsba") then
-	gridName = "spines/bigSpineBigApp.ugx"
+	gridName = "../data/grids/spines/bigSpineBigApp.ugx"
 elseif (gridID == "bsbma") then
-	gridName = "spines/bigSpineBigMovedApp.ugx"
+	gridName = "../data/grids/spines/bigSpineBigMovedApp.ugx"
 elseif (gridID == "ld") then
-	gridName = "spines/longDend.ugx"
+	gridName = "../data/grids/spines/longDend.ugx"
 else error("Unknown grid identifier " .. gridID)
 end	
 
@@ -289,12 +290,58 @@ end
 -------------------------------
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
+
+--[[ -- does not work atm.
 neededSubsets = {}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+--]]
+
+dom = util.CreateDomain(gridName, 0)
+balancer.partitioner = "parmetis"
+ccw = SubsetCommunicationWeights(dom)
+-- protect ER membrane from being cut by partitioning
+ccw:set_weight_on_subset(1000.0, 7) -- mem_er
+ccw:set_weight_on_subset(1000.0, 8) -- mem_app
+balancer.communicationWeights = ccw
+
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl		= -1
+balancer.redistSteps		= 0
+
+balancer.ParseParameters()
+balancer.PrintParameters()
+
+-- in parallel environments: use a load balancer to distribute the grid
+-- actual refinement and load balancing after setup of disc.
+loadBalancer = balancer.CreateLoadBalancer(dom)
+
+-- refining and distributing
+-- manual refinement (need to update interface node location in each step)
+if loadBalancer ~= nil then
+	balancer.Rebalance(dom, loadBalancer)
+end
+
+if numRefs > 0 then	
+	refiner = GlobalDomainRefiner(dom)
+	
+	for i = 1, numRefs do
+		TerminateAbortedRun()
+		refiner:refine()
+		TerminateAbortedRun()
+	end
+end
+
+if loadBalancer ~= nil then
+	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
+	loadBalancer:estimate_distribution_quality()
+	loadBalancer:print_quality_records()
+end
+print(dom:domain_info():to_string())
+
 
 --[[
 --print("Saving domain grid and hierarchy.")
@@ -318,9 +365,12 @@ plMem = "mem_cyt, syn"
 plMem_vec = {"mem_cyt", "syn"}
 
 erMem = "mem_er, mem_app"
+erMemVec = {"mem_er", "mem_app"}
 measZonesERM = "measZoneERM"..1
+erMemVec[#erMemVec + 1] = "measZoneERM"..1
 for i=2,3 do
 	measZonesERM = measZonesERM .. ", measZoneERM" .. i
+	erMemVec[#erMemVec + 1] = "measZoneERM"..i
 end
 erMem = erMem .. ", " .. measZonesERM
 
@@ -334,7 +384,7 @@ approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 --approxSpace:add_fct("clm_c", "Lagrange", 1, outerDomain)
 --approxSpace:add_fct("clm_n", "Lagrange", 1, outerDomain)
 
-approxSpace:init_levels()
+approxSpace:init_top_surface()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
@@ -444,6 +494,7 @@ ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 ryr = RyR({"ca_cyt", "ca_er"})
+--ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
