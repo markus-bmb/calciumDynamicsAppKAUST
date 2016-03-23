@@ -7,7 +7,6 @@
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
-ug_load_script("util/load_balancing_util.lua")
 
 -- dimension
 dim = 3
@@ -89,7 +88,7 @@ fileName = fileName .. var .. "/"
 ---------------
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
-totalClb = 10.0e-6 --4*40.0e-6 --10 for paper
+totalClb = 1*40.0e-6
 
 -- diffusion coefficients
 D_cac = 220.0
@@ -122,15 +121,15 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- density function for IP3R channels in the ER/spine apparatus membrane
 function IP3Rdensity(x,y,z,t,si)
-	return 0.0    --17.3 --23.0
+	return 30.0
 end
 
 -- density function for RyR channels in the ER/spine apparatus membrane
 function RYRdensity(x,y,z,t,si)
 	-- no ryrs in spine apparatus membrane
 	-- (as it turns out, there might yet be RyRs in the spine apparatus, so do not hesitate to deactivate this condition)
-    -- if (si == 5) then return 0.0 end
-	return 3.0     --0.86 --4.3
+	-- if (si == 5) then return 0.0 end
+	return 0.4
 end
 
 -- function for ER/spine apparatus membrane leakage flux density
@@ -143,9 +142,8 @@ leakERconstant = 3.8e-17
 function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 3.76061941665206046e-23--19221417031140517651389721685736640897416396996100207417157434974797070026397705078125e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
---	local j_ryr = 1.1204582669024472e-21--1439377961145350764561143314491273008872578888228677129745847196318209171295166015625e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
-	local j_ryr = 3.459993294003882815e-18	-- single channel RyR flux (mol/s) - to be determined via gdb
+	local j_ip3r = 3.76061941665206046e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+	local j_ryr = 1.1204582669024472e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
@@ -171,7 +169,7 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 syns = {}
 synStart = 6
 synStop = 6
-caEntryDuration = 0.001 --0.002
+caEntryDuration = 0.002
 for i=synStart,synStop do
 	syns[i] = 0.005*(i-synStart)
 end
@@ -187,7 +185,7 @@ function ourNeumannBndCA(x, y, z, t, si)
 	
 	-- single spike
 	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
-	then influx = 8e-3    --2e-4
+	then influx = 6e-2
 	else influx = 0.0
 	end
 	
@@ -214,56 +212,13 @@ end
 -- create, load, refine and distribute domain
 -- (the distribution method is only needed for parallel execution and prevents cutting the domain along a membrane)
 
---[[ -- does not work atm.
+print("create, refine and distribute domain")
 neededSubsets = {}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
 weightingFct:set_default_weights(1,1)
 weightingFct:set_inter_subset_weight(0, 1, 1000)
-dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
---]]
-
-dom = util.CreateDomain("../data/grids/" .. gridName .. var .. ".ugx", 0)
-balancer.partitioner = "parmetis"
-ccw = SubsetCommunicationWeights(dom)
--- protect ER membrane from being cut by partitioning
-ccw:set_weight_on_subset(1000.0, 4) -- mem_er
-ccw:set_weight_on_subset(1000.0, 5) -- mem_app
-balancer.communicationWeights = ccw
-
-balancer.staticProcHierarchy = true
-balancer.firstDistLvl		= -1
-balancer.redistSteps		= 0
-
-balancer.ParseParameters()
-balancer.PrintParameters()
-
--- in parallel environments: use a load balancer to distribute the grid
--- actual refinement and load balancing after setup of disc.
-loadBalancer = balancer.CreateLoadBalancer(dom)
-
--- refining and distributing
--- manual refinement (need to update interface node location in each step)
-if loadBalancer ~= nil then
-	balancer.Rebalance(dom, loadBalancer)
-end
-
-if numRefs > 0 then	
-	refiner = GlobalDomainRefiner(dom)
-	
-	for i = 1, numRefs do
-		TerminateAbortedRun()
-		refiner:refine()
-		TerminateAbortedRun()
-	end
-end
-
-if loadBalancer ~= nil then
-	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
-	loadBalancer:estimate_distribution_quality()
-	loadBalancer:print_quality_records()
-end
-print(dom:domain_info():to_string())
+dom = util.CreateAndDistributeDomain(gridName .. var .. ".ugx", numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 
 --[[
 --print("Saving domain grid and hierarchy.")
@@ -279,17 +234,17 @@ approxSpace = ApproximationSpace(dom)
 
 -- collect several subset names in subdomain variables
 cytVol = "cyt"
-measZones = "measZone_dend, measZone_head, measZone_neck"
+measZones = "measZone"..1
+for i=2,3 do
+	measZones = measZones .. ", measZone" .. i
+end
 cytVol = cytVol .. ", " .. measZones
 
---APP
-erVol = "er, app"
---erVol = "er"
+erVol = "er"
 
 plMem = "mem_cyt, syn"
 
-erMem = "mem_er, mem_app"
---erMem = "mem_er"
+erMem = "mem_er"
 
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
@@ -302,8 +257,6 @@ approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 
 -- initialize approximation space and output some information
 approxSpace:init_levels()
-approxSpace:init_surfaces();
-approxSpace:init_top_surface();
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
@@ -355,8 +308,7 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
---ryr = RyR("ca_cyt, ca_er")
-ryr = RyR2("ca_cyt, ca_er", approxSpace)
+ryr = RyR({"ca_cyt", "ca_er"})
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
@@ -460,11 +412,10 @@ domainDisc:add(neumannDiscLeak)
 --domainDisc:add(neumannDiscVGCC)
 
 -- ER flux
--- comment out to remove ca flux
---domainDisc:add(innerDiscIP3R)
---domainDisc:add(innerDiscRyR)
---domainDisc:add(innerDiscSERCA)
---domainDisc:add(innerDiscLeak)
+domainDisc:add(innerDiscIP3R)
+domainDisc:add(innerDiscRyR)
+domainDisc:add(innerDiscSERCA)
+domainDisc:add(innerDiscLeak)
 
 -------------------------------
 -- setup time discretization --
@@ -560,7 +511,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 -- non linear solver --
 -----------------------
 -- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-20, 1e-10)
+newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 10, 1e-28, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 
