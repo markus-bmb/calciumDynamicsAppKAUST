@@ -649,6 +649,7 @@ gs = GaussSeidel()
 sgs = SymmetricGaussSeidel()
 bgs = BackwardGaussSeidel()
 ilu = ILU()
+ilu:set_sort(true)
 ilut = ILUT()
 
 -- exact solver
@@ -763,9 +764,9 @@ if (generateVTKoutput) then
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
---takeMeasurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
-takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
---takeMeasurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/data")
+--take_measurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+take_measurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+--take_measurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/data")
 --exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
 
 
@@ -776,7 +777,7 @@ uOld = u:clone()
 solTimeSeries = SolutionTimeSeries()
 solTimeSeries:push(uOld, time)
 
-computeVolume(approxSpace, "measZone_head, measZone_neck, app, syn, mem_er")
+compute_volume(approxSpace, "measZone_head, measZone_neck, app, syn, mem_er")
 
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
@@ -833,9 +834,9 @@ while endTime-time > 0.001*dt do
 			end
 		end
 		
-		--takeMeasurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
-		takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
-		--takeMeasurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/app")
+		--take_measurement(u, approxSpace, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+		take_measurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+		--take_measurement(u, approxSpace, time, "app", "ca_er", fileName .. "meas/app")
 				
 		-- export solution of ca on mem_er
 		--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");
