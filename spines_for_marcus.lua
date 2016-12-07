@@ -36,6 +36,12 @@ timeStep = util.GetParamNumber("-tstep", 0.01)
 -- choose length of time step at the beginning (often needs to be smaller than timestep)
 timeStepStart = util.GetParamNumber("-tstepStart", timeStep)
 
+-- choose if RyR are used
+RyRON = util.GetParamNumber("-RyR", 1)
+
+-- choose if IP3R are used
+IP3RON = util.GetParamNumber("-IP3R", 1)
+
 -- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
 function log2(x)
 	return math.log(x)/math.log(2)
@@ -87,25 +93,37 @@ fileName = fileName .. var .. "/"
 ---------------
 -- constants --
 ---------------
--- total cytosolic calbindin concentration
+-- total cytosolic buffer concentration (Calbindin, Calmodulin binding site 1 and 2, Parvalbumin)
 -- (four times the real value in order to simulate four binding sites in one)
 totalClb = 10.0e-6 --4*40.0e-6 --10 for paper
+totalCam = 37e-6 -- 37-100e-6 huang 2004/kubota2008
+totalPV = 10.0e-6 --8.0e-6 in hippocampus, 13.5e-6 in cortex, 45.4e-6 in cerebellum. something like 50e-6 in spines(kosaka1993). higher in axons than dendrites. two binding sites. probably more calbindin  
 
 -- diffusion coefficients
 D_cac = 220.0
 D_cae = 220.0
 D_ip3 = 280.0
 D_clb = 20.0
+D_cam = 11.0 -- 2-20, kim 2006/kubota2008
+D_pv = 43.0 -- 43um^2s^-1, schmidt 2003 biophys j
 
--- calbindin binding rates
+-- buffer binding rates (Calbindin, Calmodulin binding site 1 and 2, Parvalbumin)
 k_bind_clb = 	27.0e06
 k_unbind_clb = 	19
+k_bind_cam1 = 	7.7e08 -- faas 2011
+k_unbind_cam1 = 1.6e05
+k_bind_cam2 = 	8.4e07
+k_unbind_cam2 = 2.6e3
+k_bind_pv = 	107.5 -- lee schwaller 2000
+k_unbind_pv = 	0.98
 
 -- initial concentrations
 ca_cyt_init = 5.0e-08 --4.0e-8
 ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1) -- equilibrium conc.
+cam_init = totalCam / (k_bind_cam1/k_unbind_cam1*ca_cyt_init + 1)
+pv_init = totalPV / (k_bind_pv/k_unbind_pv*ca_cyt_init + 1)
 
 -- reaction reate IP3
 reactionRateIP3 = 0.11
@@ -122,7 +140,7 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- density function for IP3R channels in the ER/spine apparatus membrane
 function IP3Rdensity(x,y,z,t,si)
-	return 0.0    --17.3 --23.0
+	if (IP3RON == 1) then return 17.3 else return 0.0 end    --17.3 --23.0
 end
 
 -- density function for RyR channels in the ER/spine apparatus membrane
@@ -130,7 +148,7 @@ function RYRdensity(x,y,z,t,si)
 	-- no ryrs in spine apparatus membrane
 	-- (as it turns out, there might yet be RyRs in the spine apparatus, so do not hesitate to deactivate this condition)
     -- if (si == 5) then return 0.0 end
-	return 3.0     --0.86 --4.3
+    if (RyRON == 1) then return 3.0 else return 0.0 end
 end
 
 -- function for ER/spine apparatus membrane leakage flux density
@@ -143,9 +161,9 @@ leakERconstant = 3.8e-17
 function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 3.76061941665206046e-23--19221417031140517651389721685736640897416396996100207417157434974797070026397705078125e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
---	local j_ryr = 1.1204582669024472e-21--1439377961145350764561143314491273008872578888228677129745847196318209171295166015625e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
-	local j_ryr = 3.459993294003882815e-18	-- single channel RyR flux (mol/s) - to be determined via gdb
+	if (IP3RON == 1) then j_ip3r = 3.76061941665206046e-23 else j_ip3r = 0.0 end -- single channel IP3R flux (mol/s) - to be determined via gdb
+	if (RyRON == 1) then j_ryr = 1.12010156334666959203e-21 else j_ryr = 0.0 end -- single channel RyR flux (mol/s) - to be determined via gdb ryr2
+--	local j_ryr = 0.0--1.1204582669024472e-21 -- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
 	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
@@ -187,7 +205,7 @@ function ourNeumannBndCA(x, y, z, t, si)
 	
 	-- single spike
 	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
-	then influx = 8e-3    --2e-4
+	then influx = 8e-3    --2e-4 --8e-3paper 2e-1 strong
 	else influx = 0.0
 	end
 	
@@ -197,11 +215,11 @@ end
 
 -- burst of ip3 at active synapse (triangular, immediate)
 ip3EntryDelay = 0.000
-ip3EntryDuration = 2.0
-corrFact = -10.4	-- to correct for ip3 not being able to flow out at both dendritic ends
+ip3EntryDuration = 0.2
+--corrFact = -10.4	-- to correct for ip3 not being able to flow out at both dendritic ends
 function ourNeumannBndIP3(x, y, z, t, si)
 	if 	(si>=synStart and si<=synStop and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
-	then influx = math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
+	then influx = 8.4e-4 * (1.0 - (t-syns[si])/ip3EntryDuration)--math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
 	else influx = 0.0
 	end
     
@@ -214,7 +232,7 @@ end
 -- create, load, refine and distribute domain
 -- (the distribution method is only needed for parallel execution and prevents cutting the domain along a membrane)
 
---[[ -- does not work atm.
+--[[ does not work atm.
 neededSubsets = {}
 distributionMethod = "metisReweigh"
 weightingFct = InterSubsetPartitionWeighting()
@@ -299,6 +317,9 @@ approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("cam1", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("cam2", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("pv", "Lagrange", 1, outerDomain)
 
 -- initialize approximation space and output some information
 approxSpace:init_levels()
@@ -336,6 +357,18 @@ elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
 elemDiscClb:set_diffusion(D_clb)
 elemDiscClb:set_upwind(upwind)
 
+elemDiscCam1 = ConvectionDiffusion("cam1", cytVol, "fv1")
+elemDiscCam1:set_diffusion(D_cam)
+elemDiscCam1:set_upwind(upwind)
+
+elemDiscCam2 = ConvectionDiffusion("cam2", cytVol, "fv1")
+elemDiscCam2:set_diffusion(D_cam)
+elemDiscCam2:set_upwind(upwind)
+
+elemDiscPv = ConvectionDiffusion("pv", cytVol, "fv1")
+elemDiscPv:set_diffusion(D_pv)
+elemDiscPv:set_upwind(upwind)
+
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
@@ -347,6 +380,27 @@ elemDiscBuffering:add_reaction(
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
 
+elemDiscBuffering:add_reaction(
+	"cam1",							-- calmodulin
+	"ca_cyt",						-- the buffered substance
+	totalCam,						-- total amount of buffer
+	k_bind_cam1,					-- binding rate constant
+	k_unbind_cam1)				    -- unbinding rate constant
+--[[	
+elemDiscBuffering:add_reaction(
+	"pv",							-- parvalbumin
+	"ca_cyt",						-- the buffered substance
+	totalPV,						-- total amount of buffer
+	k_bind_pv,					    -- binding rate constant
+	k_unbind_pv)				    -- unbinding rate constant
+	
+elemDiscBuffering:add_reaction(
+	"cam2",
+	"ca_cyt",						-- the buffered substance
+	totalCam,						-- total amount of buffer
+	k_bind_cam2,				    -- binding rate constant
+	k_unbind_cam2)				    -- unbinding rate constant
+	--]]
 ----------------------------------------------------
 -- setup inner boundary (channels on ER membrane) --
 ----------------------------------------------------
@@ -446,6 +500,9 @@ domainDisc:add(elemDiscER)
 domainDisc:add(elemDiscCYT)
 domainDisc:add(elemDiscIP3)
 domainDisc:add(elemDiscClb)
+domainDisc:add(elemDiscCam1)
+domainDisc:add(elemDiscCam2)
+domainDisc:add(elemDiscPv)
 
 -- buffering disc
 domainDisc:add(elemDiscBuffering)
@@ -461,10 +518,15 @@ domainDisc:add(neumannDiscLeak)
 
 -- ER flux
 -- comment out to remove ca flux
---domainDisc:add(innerDiscIP3R)
---domainDisc:add(innerDiscRyR)
---domainDisc:add(innerDiscSERCA)
---domainDisc:add(innerDiscLeak)
+if IP3RON == 1 then domainDisc:add(innerDiscIP3R) end
+if RyRON == 1 then domainDisc:add(innerDiscRyR) end
+if IP3RON == 1 then 
+    domainDisc:add(innerDiscSERCA)
+    domainDisc:add(innerDiscLeak)
+elseif RyRON == 1 then 
+    domainDisc:add(innerDiscSERCA)
+    domainDisc:add(innerDiscLeak)
+end
 
 -------------------------------
 -- setup time discretization --
@@ -591,6 +653,9 @@ Interpolate(ca_cyt_init, u, "ca_cyt", 0.0)
 Interpolate(ca_er_init, u, "ca_er", 0.0)
 Interpolate(ip3_init, u, "ip3", 0.0)
 Interpolate(clb_init, u, "clb", 0.0)
+Interpolate(cam_init, u, "cam1", 0.0)
+Interpolate(cam_init, u, "cam2", 0.0)
+Interpolate(pv_init, u, "pv", 0.0)
 
 
 -- timestep in seconds
@@ -606,7 +671,7 @@ end
 
 -- taking an initial measurement of all unknwons in all measurement zones on the ER membrane
 -- the folder "meas" must exist in your file output directory specified in fileName
-takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb, cam1", fileName .. "meas/data")
 
 
 -- create new grid function for old value
@@ -691,7 +756,7 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- take measurements in measurement zones
-		takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+		takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb, cam1", fileName .. "meas/data")
 				
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
