@@ -108,8 +108,8 @@ D_cam = 11.0 -- 2-20, kim 2006/kubota2008
 D_pv = 43.0 -- 43um^2s^-1, schmidt 2003 biophys j
 
 -- buffer binding rates (Calbindin, Calmodulin binding site 1 and 2, Parvalbumin)
-k_bind_clb = 	27.0e06
-k_unbind_clb = 	19
+k_bind_clb = 	27.0e06 --27.0e06 CHANGE BACK!!
+k_unbind_clb = 	19 --19 CHANGE BACK!!
 k_bind_cam1 = 	7.7e08 -- faas 2011
 k_unbind_cam1 = 1.6e05
 k_bind_cam2 = 	8.4e07
@@ -120,7 +120,7 @@ k_unbind_pv = 	0.98
 -- initial concentrations
 ca_cyt_init = 5.0e-08 --4.0e-8
 ca_er_init = 2.5e-4
-ip3_init = 4.0e-8
+ip3_init = 4.0e-8 
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1) -- equilibrium conc.
 cam_init = totalCam / (k_bind_cam1/k_unbind_cam1*ca_cyt_init + 1)
 pv_init = totalPV / (k_bind_pv/k_unbind_pv*ca_cyt_init + 1)
@@ -129,7 +129,7 @@ pv_init = totalPV / (k_bind_pv/k_unbind_pv*ca_cyt_init + 1)
 reactionRateIP3 = 0.11
 
 -- equilibrium concentration IP3
-equilibriumIP3 = 4.0e-08
+equilibriumIP3 = 4.0e-08 
 
 -- reation term IP3
 reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
@@ -372,21 +372,23 @@ elemDiscPv:set_upwind(upwind)
 ---------------------------------------
 -- setup reaction terms of buffering --
 ---------------------------------------
+
 elemDiscBuffering = BufferFV1(cytVol)	-- where buffering occurs
+elemDiscBuffering:set_num_reactions(4)
 elemDiscBuffering:add_reaction(
 	"clb",						    -- the buffering substance
 	"ca_cyt",						-- the buffered substance
 	totalClb,						-- total amount of buffer
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
-
+--[[
 elemDiscBuffering:add_reaction(
 	"cam1",							-- calmodulin
 	"ca_cyt",						-- the buffered substance
 	totalCam,						-- total amount of buffer
 	k_bind_cam1,					-- binding rate constant
 	k_unbind_cam1)				    -- unbinding rate constant
---[[	
+	
 elemDiscBuffering:add_reaction(
 	"pv",							-- parvalbumin
 	"ca_cyt",						-- the buffered substance
@@ -400,7 +402,7 @@ elemDiscBuffering:add_reaction(
 	totalCam,						-- total amount of buffer
 	k_bind_cam2,				    -- binding rate constant
 	k_unbind_cam2)				    -- unbinding rate constant
-	--]]
+]]--
 ----------------------------------------------------
 -- setup inner boundary (channels on ER membrane) --
 ----------------------------------------------------
