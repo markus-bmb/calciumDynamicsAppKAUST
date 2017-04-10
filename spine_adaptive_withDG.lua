@@ -23,7 +23,7 @@ fileName = fileName.."/"
 
 -- choice of grid
 gridID = util.GetParam("-grid", "normSpine")
-gridName = fileName..gridID..".ugx"
+gridName = fileName.."grid/"..gridID..".ugx"
 
 -- app length
 appLen = util.GetParam("-appLen", 0.94)
@@ -32,17 +32,17 @@ if ProcRank() == 0 then
 	BuildDendrite(
 	{
 		0.45,	-- cytosol radius (um)
-		0.11,	-- ER radius (um)
+		0.14,	-- ER radius (um)
 		10.0,	-- dendrite length (um)
 		5.0,	-- app position (um)
-		0.028,	-- app neck radius (um)
+		0.024,	-- app neck radius (um)
 		appLen,	-- app neck length (um)
 		0.0,	-- app head radius (in addition to neck radius) (um)
 		0.0,	-- app head length (um)
-		0.074,	-- spine neck radius (um)
-		0.667,	-- spine neck length (um)
-		0.186,	-- spine head radius (um)
-		0.519	-- spine head length (um)
+		0.075,	-- spine neck radius (um)
+		0.7,	-- spine neck length (um)
+		0.24,--0.175,	-- spine head radius (um)
+		0.63--0.500	-- spine head length (um)
 	},
 	{
 		true,	-- synapse?
