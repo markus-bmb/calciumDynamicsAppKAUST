@@ -241,7 +241,7 @@ weightingFct:set_inter_subset_weight(0, 1, 1000)
 dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
 --]]
 
-dom = util.CreateDomain("../data/grids/" .. gridName .. var .. ".ugx", 0)
+dom = util.CreateDomain("grids/" .. gridName .. ".ugx", 0)
 balancer.partitioner = "parmetis"
 ccw = SubsetCommunicationWeights(dom)
 -- protect ER membrane from being cut by partitioning
@@ -388,7 +388,7 @@ elemDiscBuffering:add_reaction(
 	totalCam,						-- total amount of buffer
 	k_bind_cam1,					-- binding rate constant
 	k_unbind_cam1)				    -- unbinding rate constant
-	
+
 elemDiscBuffering:add_reaction(
 	"pv",							-- parvalbumin
 	"ca_cyt",						-- the buffered substance
@@ -673,7 +673,7 @@ end
 
 -- taking an initial measurement of all unknwons in all measurement zones on the ER membrane
 -- the folder "meas" must exist in your file output directory specified in fileName
-takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb, cam1", fileName .. "meas/data")
+take_measurement(u, time, measZones, "ca_cyt, ip3, clb, cam1", fileName .. "meas/data")
 
 
 -- create new grid function for old value
@@ -758,7 +758,7 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- take measurements in measurement zones
-		takeMeasurement(u, time, measZones, "ca_cyt, ip3, clb, cam1", fileName .. "meas/data")
+		take_measurement(u, time, measZones, "ca_cyt, ip3, clb, cam1", fileName .. "meas/data")
 				
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
