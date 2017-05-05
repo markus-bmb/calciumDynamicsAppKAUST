@@ -31,9 +31,15 @@ headRad = util.GetParamNumber("-headRad", 0.21)
 headLen = util.GetParamNumber("-headLen", 0.58)
 appRad = util.GetParamNumber("-appRad", 0.025)
 appLen = util.GetParamNumber("-appLen", 0.5)
+appHeadLen = util.GetParamNumber("-appHeadLen", 0.0)
+appHeadRad = util.GetParamNumber("-appHeadRad", 0.0)
 buildApp = true
 if appLen == 0 then
 	buildApp = false
+end
+buildAppHead = false
+if appHeadLen > 0 and appHeadRad > 0 then
+	buildAppHead = true
 end
 
 if ProcRank() == 0 then
@@ -45,8 +51,8 @@ if ProcRank() == 0 then
 		5.0,	-- spine position (um)
 		appRad,	-- app neck radius (um)
 		appLen,	-- app neck length (um)
-		0.0,	-- app head radius (in addition to neck radius) (um)
-		0.0,	-- app head length (um)
+		appHeadRad - appRad,	-- app head radius (in addition to neck radius) (um)
+		appHeadLen,	-- app head length (um)
 		0.08,	-- spine neck radius (um)
 		neckLen,-- spine neck length (um)
 		headRad,-- spine head radius (um)
@@ -57,7 +63,7 @@ if ProcRank() == 0 then
 		true,	-- ER?
 		buildApp,	-- app?
 		false,	-- never use that
-		false	-- app head?
+		buildAppHead	-- app head?
 	},
 	gridName
 	)
