@@ -396,7 +396,7 @@ approxSpace3d:init_top_surface();
 approxSpace3d:print_layout_statistic()
 approxSpace3d:print_statistic()
 
-OrderCuthillMcKee(approxSpace3d, true)
+--OrderCuthillMcKee(approxSpace3d, true)
 
 --------------------------
 -- setup discretization --
@@ -508,10 +508,10 @@ discVDCC:set_density_function(vdccDensity)
 
 
 -- synaptic activity --
-synapseInflux = HybridSynapseCurrentAssembler(approxSpace3d, approxSpace1d, syn_handler, {"pm"}, "ca_cyt")
+synapseInflux = HybridSynapseCurrentAssembler(approxSpace3d, approxSpace1d, syn_handler, {"pm"}, "ca_cyt", "ip3")
 synapseInflux:set_current_percentage(0.01)
 synapseInflux:set_3d_neuron_ids({nid})
-synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0)
+synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
 synapseInflux:set_valency(2)
 
 -- TODO: What about IP3 influx!?
@@ -561,12 +561,13 @@ dbgWriter:set_vtk_output(false)
 -- biCGstab --
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-50)
-convCheck:set_reduction(1e-8)
+convCheck:set_reduction(1e-6)
 convCheck:set_verbose(verbose3d)
 
 if (solverID == "ILU") then
     bcgs_steps = 10000
     bcgs_precond = ILU()
+    bcgs_precond:set_sort(true)
 elseif (solverID == "GS") then
     bcgs_steps = 10000
     bcgs_precond = GaussSeidel()
@@ -602,7 +603,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 
 --- non-linear solver ---
 -- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 1e-18, 1e-12)
+newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 5e-18, 1e-12)
 --newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-12)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
