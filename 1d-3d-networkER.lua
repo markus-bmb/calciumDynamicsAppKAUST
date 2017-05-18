@@ -513,8 +513,7 @@ synapseInflux:set_current_percentage(0.01)
 synapseInflux:set_3d_neuron_ids({nid})
 synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
 synapseInflux:set_valency(2)
-
--- TODO: What about IP3 influx!?
+synapseInflux:set_ip3_production_params(6e-20, 1.188)--6e-19, 1.188)
 
 
 -- domain discretization --
