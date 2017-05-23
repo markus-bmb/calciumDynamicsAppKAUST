@@ -1,0 +1,102 @@
+VEGFD_15_8cell1_2rec20150511_tracing                  
+  x 239.87  285.31  309.78          
+  y -522.91 -321.45 -177.69         
+  z -17 -17 -58         
+VEGFD_15_8cell3_4rec20150511_closeCA2_tracing                 
+  x 562.65  442.76  318.53          
+  y -565.54 -316.66 -158.28         
+  z -28 -67 -96         
+VEGFD_15_8cell3_4rec20150511_closeSub_tracing                 
+  x 331.08  264.79  209.86          
+  y -618.1  -317.26 -158.02         
+  z -31 -77 -93         
+VEGFD_15_24cell1_2rec20150619_tracing_1                 
+  x 400.4 336.92  299.45          
+  y -536.13 -310.71 -157.8          
+  z -14 -77 -104          
+VEGFD_15_24cell1_2rec20150619_tracing_2                 
+  x 568.15  463.95  374.21          
+  y -522.94 -306.71 -190.3          
+  z -28 -74 -80         
+VEGFD_15_25cell1_rec20150615_tracing                  
+  x 329.78  300.53  255.94          
+  y -665.67 -374.04 -210.01         
+  z -8  -67 -101         
+VEGFD_140519_cell1Tracingcorrectversion                 
+  x 158.3 428.73  522.94          
+  y -184.58 -341.35 -433.39         
+  z 10.1  -17.65  -51.35     
+VEGFD_140711_Cell1_Tracing                  
+  x 139.17  405.17  466.76          
+  y -316.94 -273.88 -266.39         
+  z -32 43  70             
+VEGFD_rec20150116_cell2_tracing                 
+  x 184.13  294.23  434.58          
+  y -626.99 -362.44 -175.41         
+  z -9  -44 -52           
+VEGFD_slice2_tracing3                 
+  x 71.35 nottraced  nottraced          
+  y -193.86 nottraced  nottraced          
+  z 12  nottraced  nottraced          
+VEGFD_slice3_r131114_i071014_tracing3                 
+  x 238.86  258.78  195.55          
+  y -166.77 -513.27 -802.65         
+  z -35 -35 -35         
+VEGFD_slice5_r131114_i071014_tracing3                 
+  x 146.2 304.47  313.61          
+  y -603.95 -324.78 -175.53         
+  z -37 -113  -143          
+SCR   basal apical  apical          
+    oriens  radiatum  lm          
+SCR_15_9cell1_2rec20150506_tracing                  
+  x 420.86  330.63  184.02          
+  y -709.91 -400.17 -238.07         
+  z -20 -63 -98         
+SCR_15_9cell3_4_5rec20150506_closeSub_tracing_1                 
+  x 437.29  321.19  202.41          
+  y -666.76 -374.24 -173.89         
+  z -42 -52 -78         
+SCR_15_9cell3_4_5rec20150506_closeSub_tracing_3                 
+  x 622.05  455.51  312.78          
+  y -612.35 -335.04 -172.1          
+  z -30 -37 -61         
+SCR_15_10cell1rec20150512_tracing                 
+  x 136.97  321.39  441.83          
+  y -585.39 -334.71 -188.8          
+  z -16 -69 -48         
+SCR_140516_cell1_tracing                  
+  x 141.8 385.03  556.08          
+  y -203.07 -326.48 -426.8          
+  z -44.15  -80 -56.15    
+SCR_140702_tracing                  
+  x 533.46  295.33  165.21          
+  y -149.25 -252.16 -323.51         
+  z -19 -75 -107               
+SCR_rec20150815_15_29_cell2+3_tracing                 
+  x 476.94  321.46  202.69          
+  y -585.21 -299.8  -192.78         
+  z -33 -31 -39    
+SCR_rec20150819_15_30cell1+2_tracing_left                 
+  x 305.13  276.35  221.51          
+  y -583.98 -288.91 -147.26         
+  z -27 -37 -103          
+SCR_rec20150819_15_30cell1+2_tracing_right                  
+  x 334.32  302.73  241.5         
+  y -598.49 -318.48 -155.72         
+  z -15 -51 -59         
+SCR_rec20150819_15_30cell4_tracing1_basal                 
+  x 167.23  nottraced  nottraced          
+  y -606.47 nottraced  nottraced          
+  z -55 nottraced  nottraced       
+SCR_rec20150819_15_30cell4_tracing2_apical                  
+  x nottraced  209.52  397.33          
+  y nottraced  -368.62 -181.59         
+  z nottraced  -42 -59         
+SCR_slice4_r121114_i300914_tracing2                 
+  x 271.48  163.29  85.26         
+  y -667.45 -295.41 -95.79          
+  z -45 -32 -39                
+SCR_slice5_r121114_i300914_tracing1                 
+  x nottraced  253.85  190.43          
+  y nottraced  -368.39 -541.91         
+  z nottraced  -64 -91           
