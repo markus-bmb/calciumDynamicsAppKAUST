@@ -8,16 +8,32 @@
 ug_load_script("ug_util.lua")
 ug_load_script("ashley_util.lua")
 
--- get cell ID name to simulate on
-cellID = util.GetParam("-cell", "SCR_15_9cell1_2rec20150506_tracing")
+
+---------------------------------------------
+---------------------------------------------
+-- The following parameters need to be set --
+-- before any simulation.                  --
+---------------------------------------------
+-- cell ID name to simulate on
+cellID = util.GetParam("-cell", "SCR_140702_tracing")
+
+-- stimulation layer (1: basal o., 2: apical rm., 3: apical lm.) 
+layer = util.GetParamNumber("-layer", 1)
+
+-- number of synapses to distribute within stimulation ball region
+nSyn = util.GetParamNumber("-nsyn", 50)
+
+-- peak conductance for synapses
+peakCond = util.GetParamNumber("-cond", 1.2e-09)
+
+-- output directory
+outPath = util.GetParam("-outPath", cellID .. "_peakCond" .. peakCond)
+----------------------------------------------
+----------------------------------------------
+
 
 -- parse ball regions and soma name for this cell
-layers = parse_params(cellname, "coordinatesForModeling_final.txt")
-
--- get output path from command line
--- it needs to contain at least the subdirectory "grid"
--- as well as the subdirectory "vtk" if vtk output is enabled
-outPath = util.GetParam("-outName", cellID)
+layers = parse_params(cellID, "coordinatesForModeling_final.txt")
 
 
 -- simulation setup
@@ -26,7 +42,7 @@ simulation_setup = {
 	cellName = cellID,
 	
 	-- number of synapses
-	numSyn = 100,
+	numSyn = nSyn,
 	
 	-- stimulation of synapses
 	stimSyn = {
@@ -38,36 +54,49 @@ simulation_setup = {
 			tau1_dev = 0.0,
 			tau2_mean = 5e-3,
 			tau2_dev = 0.0,
-			peak_conductance = 1.2e-9,
+			peak_conductance = peakCond,
 			peak_cond_dev = 0.0
 		},
 
-		-- stimulation region (e.g. basal oriens, apical radiatum or apical lm)
+		-- stimulation region center (placeholder only)
 		region = {
-			x = -5.274e-05,
-			y = -0.00029732,
-			z = -5.8e-05,
-			w = 50, -- diameter of each layer is 50 µm
+			x = 0.0,
+			y = 0.0,
+			z = 0.0,
+			w = 5e-5, -- diameter of each layer is 50 µm
 		}
 	},
   
-	-- folder for paraview output and csv data write out
+	-- folder for paraview output (placeholder only)
 	outputPath = ""
 }
 
 
+-- only simulate if layer center coordinate is not "nottraced";
+if not (layers[layer][1] == "nottraced" or
+        layers[layer][2] == "nottraced" or
+        layers[layer][3] == "nottraced")
+then
+	layerName = layers[layer][4]:gsub("%s+", "_")
 
--- main batch loop (loops layers)
-for i = 1, #layers do
-	-- only simulate if layer coordinates are not "nottraced";
-	if not (layers[i][1] == "nottraced" or layers[i][2] == "nottraced" or layers[i][3] == "nottraced") then
-		simulation_setup.outputPath = outPath .. "__" .. layers[i][4]:gsub("%s+", "_")
+	-- create subdirectory for stimulation region in outPath (only root proc)
+	if ProcRank() == 0 then
+		os.execute("mkdir -p " .. outPath .. "/" .. layerName)
 		
-		simulation_setup.stimSyn.region.x = layers[i][1] * 1e-6
-		simulation_setup.stimSyn.region.y = layers[i][2] * 1e-6
-		simulation_setup.stimSyn.region.z = layers[i][3] * 1e-6
-		simulation_setup.stimSyn.region.w = 50 * 1e-6
-		
-		dofile 'ashley-1d-3d.lua'
+		-- create subdirectories for simulation output
+		os.execute("mkdir " .. outPath .. "/" .. layerName .. "/grid")
+		os.execute("mkdir " .. outPath .. "/" .. layerName .. "/meas")
+		os.execute("mkdir " .. outPath .. "/" .. layerName .. "/vtk")
 	end
+	
+	-- append layer name to output path
+	simulation_setup.outputPath = outPath .. "/" .. layerName
+	
+	-- store layer center
+	simulation_setup.stimSyn.region.x = layers[layer][1] * 1e-6
+	simulation_setup.stimSyn.region.y = layers[layer][2] * 1e-6
+	simulation_setup.stimSyn.region.z = layers[layer][3] * 1e-6
+	
+	-- do the actual simulation
+	dofile 'ashley_1d-3d.lua'
 end

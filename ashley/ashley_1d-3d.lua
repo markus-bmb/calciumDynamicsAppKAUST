@@ -25,17 +25,24 @@ InitUG(3, AlgebraType("CPU", 1));
 ----------------------------------
 -- Read command line parameters --
 ----------------------------------
+-- the cell ID to process
+cell = simulation_setup.cellName
+if not cell then
+  print("Cell name not specified.")
+  exit()
+end
+
 -- choice of 1d/3d grids and refinement level
-gridName1d = util.GetParam("-grid1d", simulation_setup.cellName .. "_1d.ugx")
-gridName3d = util.GetParam("-grid3d", simulation_setup.cellName .. "_3d.ugx")
+gridName1d = "grids/" .. cell .. "_1d.ugx"--util.GetParam("-grid1d", simulation_setup.cellName .. "_1d.ugx")
+gridName3d = "grids/" .. cell .. "_3d.ugx"--util.GetParam("-grid3d", simulation_setup.cellName .. "_3d.ugx")
 numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- parameters for time stepping
 -- (dt3d and dt3dStart should be multiples of dt1d)
 dt1d = util.GetParamNumber("-dt1d", 1e-5) -- in s
-dt3d = util.GetParamNumber("-dt3d", 1e-2) -- in s
-dt3dStart = util.GetParamNumber("-dt3dstart", dt3d) -- in s
-endTime = util.GetParamNumber("-endTime", 1.0)  -- in s
+dt3d = util.GetParamNumber("-dt3d", 1.6e-3) -- in s
+dt3dStart = util.GetParamNumber("-dt3dstart", 1e-4) -- in s
+endTime = util.GetParamNumber("-endTime", 0.1)  -- in s
 
 -- with simulation of single ion concentrations?
 -- (1d simulation will take longer, but be more precise,
@@ -70,19 +77,13 @@ print("    ions       = " .. tostring(withIons))
 print("    verbose1d  = " .. tostring(verbose1d))
 print("    verbose3d  = " .. tostring(verbose3d))
 print("    vtk        = " .. tostring(generateVTKoutput))
-print("    outname    = " .. outPath)
+print("    outPath    = " .. outPath)
 
 
 -------------------------
 -- distribute synapses --
 -------------------------
-cell = simulation_setup.cellName
-if not cell then
-  print("Cell name not specified.")
-  exit()
-end
-
-sd = SynapseDistributor(cell .. ".ugx")
+sd = SynapseDistributor("grids/" .. cell .. "_1d.ugx")
 sd:clear()
 sd:place_synapses_uniform(
 	simulation_setup.numSyn,	
@@ -94,12 +95,19 @@ sd:place_synapses_uniform(
 )
 sd:print_status()
 
--- save grid with distributed synapses
-gridSyn = outPath .. "grid/" .. cell .. "_syn.ugx"
-sd:export_grid()
+-- save grid with distributed synapses (only root)
+gridSyn = outPath .. "grid/" .. cell .. "_1d_syn.ugx"
+if ProcRank() == 0 then
+	if not sd:export_grid(gridSyn) then
+		print("Synapse grid export failed.")
+		exit()
+	end
+end
 
 gridName1d = gridSyn
 
+-- synchronize when synapse geom is written
+PclDebugBarrierAll()
 
 ---------------------------------------------
 -- electrical settings (for 1d simulation) --
@@ -159,7 +167,7 @@ temp = 37.0
 ---------------------------------------
 -- determine available subset names
 fi = UGXFileInfo()
-fi:parse_file(gridName)
+fi:parse_file(gridName1d)
 numSs = fi:num_subsets(0,0) -- indices for grid and subset_handler
 dendrites = {}
 axons = {}
@@ -227,7 +235,7 @@ OrderCuthillMcKee(approxSpace1d, true);
 -- create 1d discretization --
 ------------------------------
 -- cable equation
-CE = CableEquation(allSubsets, withIons)
+CE = CableEquation(table.concat(all_subsets, ","), withIons)
 CE:set_spec_cap(spec_cap)
 CE:set_spec_res(spec_res)
 CE:set_rev_pot_k(e_k)
@@ -241,9 +249,9 @@ CE:set_temperature_celsius(temp)
 
 -- Hodgkin and Huxley channels
 if withIons == true then
-	HH = ChannelHHNernst("v", allSubsets)
+	HH = ChannelHHNernst("v", table.concat(all_subsets, ","))
 else
-	HH = ChannelHH("v", allSubsets)
+	HH = ChannelHH("v", table.concat(all_subsets, ","))
 end
 if axons then
 	HH:set_conductances(g_k_ax, g_na_ax, table.concat(axons, ","))
@@ -375,7 +383,7 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 ----------------------------------
 -- create domain
 reqSubsets = {"cyt", "er", "pm", "erm"}
-dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
+dom3d = util.CreateDomain("grids/" .. cell .. "_3d.ugx", 0, reqSubsets)
 
 -- in parallel environments: use a load balancer to distribute
 -- the grid to the processors as evenly as possible
@@ -693,7 +701,7 @@ solTimeSeries:push(uOld, time)
 min_dt = dt3d / math.pow(2,15)
 cb_interval = 4
 lv = startLv
-levelUpDelay = math.max(6*syn_tau, 5e-3)
+levelUpDelay = 5e-3
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
