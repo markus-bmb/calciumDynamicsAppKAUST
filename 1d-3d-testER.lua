@@ -358,60 +358,11 @@ leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux 
 if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
 
---------------------------------------------
--- activation function for the 3d problem --
---------------------------------------------
-firstSynSubset = 4
-lastSynSubset = 8
-
--- synaptic areas in the grid [um]
---syn_area = {0.195273, 0.276863, 0.271546, 0.264213, 0.317378} -- smith_3d
---syn_area = {0.129188, 0.245946, 0.239417, 0.253902, 0.26404}   -- smith_3d_new
-syn_area = {0.262646, 0.359404, 0.326213, 0.268629, 0.319539}   -- smith_3d_farSyns
-
--- calcium influx for active synapses
-function synCurrentDensityCa(x, y, z, t, si)
-	if (si >= firstSynSubset and si <= lastSynSubset) then
-	    s = si - firstSynSubset + 1
-	    if (t >= syn_onset[s] and t < syn_onset[s] + 6.0*syn_tau) then
-	    	local conductance = syn_gMax * (t - syn_onset[s]) / syn_tau * math.exp(-(t - syn_onset[s] - syn_tau) / syn_tau);
-	   		
-	   		-- we assume membrane potential to be -0.065 throughout (as we do not know the real one)
-	   		local el_current = - (-0.065 - syn_revPot) * conductance -- [A]
-	   		
-	   		-- about 1% of the current is carried by calcium
-	    	local ionic_current = 0.01 * el_current / (2 * 96485.0) -- [mol/s]
-	    	
-	    	-- we need a current density!
-	    	local current_density = ionic_current / syn_area[s] -- [mol/(s*um^2)]
-	    	
-	    	-- finally, we need to scale mol -> mol (um/dm)^3
-	    	return current_density * 1e15
-	   	end
-	end
-	
-	return 0.0
-end
-
--- calcium influx for active synapses
-ip3EntryDelay = 0.000
-ip3EntryDuration = 2.0
-function synCurrentDensityIP3(x, y, z, t, si)
-	if si >= firstSynSubset and si <= lastSynSubset then
-	    s = si - firstSynSubset + 1
-	    if (t >= syn_onset[s]+ip3EntryDelay and t < syn_onset[s] + ip3EntryDelay + ip3EntryDuration) then
-	    	return 2e-5 / syn_area[s] * (1.0 - (t-syn_onset[s]-ip3EntryDelay) / ip3EntryDuration)
-	   	end
-	end
-	
-	return 0.0
-end
-
 ----------------------------------
 -- setup 3d approximation space --
 ----------------------------------
 -- create, load, refine and distribute domain
-reqSubsets = {"cyt", "er", "pm", "erm", "syn1", "syn2", "syn3", "syn4", "syn5"}
+reqSubsets = {"cyt", "er", "pm", "erm"}--, "syn1", "syn2", "syn3", "syn4", "syn5"}
 dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
 balancer.partitioner = "parmetis"
 
@@ -465,8 +416,8 @@ approxSpace3d = ApproximationSpace(dom3d)
 
 cytVol = "cyt"
 erVol = "er"
-plMem = "pm, syn1, syn2, syn3, syn4, syn5"
-plMem_vec = {"pm", "syn1", "syn2", "syn3", "syn4", "syn5"}
+plMem = "pm"--, syn1, syn2, syn3, syn4, syn5"
+plMem_vec = {"pm"}--, "syn1", "syn2", "syn3", "syn4", "syn5"}
 erMem = "erm"
 
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
@@ -591,12 +542,13 @@ discVDCC = MembraneTransportFV1(plMem, vdcc)
 discVDCC:set_density_function(vdccDensity)
 
 
--- synaptic activity --
-synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", plMem)
-synapseInfluxCa:set_flux_function("synCurrentDensityCa")
+synapseInflux = HybridSynapseCurrentAssembler(approxSpace3d, approxSpace1d, syn_handler, {"pm"}, "ca_cyt", "ip3")
+synapseInflux:set_current_percentage(0.01)
+synapseInflux:set_3d_neuron_ids({0})
+synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
+synapseInflux:set_valency(2)
+synapseInflux:set_ip3_production_params(6e-20, 1.188)
 
-synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", plMem)
-synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
 
 
 -- domain discretization --
@@ -619,9 +571,7 @@ domDisc3d:add(discNCX)
 domDisc3d:add(discPMLeak)
 domDisc3d:add(discVDCC)
 
-domDisc3d:add(synapseInfluxCa)
-domDisc3d:add(synapseInfluxIP3)
-
+domDisc3d:add(synapseInflux)
 
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domDisc3d)
