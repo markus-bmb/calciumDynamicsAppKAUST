@@ -14,6 +14,7 @@
 
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
+ug_load_script("plugins/Limex/limex_util.lua")
 
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
@@ -406,16 +407,18 @@ erMemVec = {"erm"}
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem 
 
-approxSpace3d:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
-approxSpace3d:add_fct("ca_er", "Lagrange", 1, innerDomain)
-approxSpace3d:add_fct("clb", "Lagrange", 1, outerDomain)
-approxSpace3d:add_fct("ip3", "Lagrange", 1, outerDomain)
+approxSpace3d:add_fct("ca_cyt", "Lagrange", 1)--, outerDomain)
+approxSpace3d:add_fct("ca_er", "Lagrange", 1)--, innerDomain)
+approxSpace3d:add_fct("clb", "Lagrange", 1)--, outerDomain)
+approxSpace3d:add_fct("ip3", "Lagrange", 1)--, outerDomain)
 
 approxSpace3d:init_levels();
 approxSpace3d:init_surfaces();
 approxSpace3d:init_top_surface();
 approxSpace3d:print_layout_statistic()
 approxSpace3d:print_statistic()
+
+OrderCuthillMcKee(approxSpace3d, true);
 
 --------------------------
 -- setup discretization --
@@ -533,6 +536,13 @@ synapseInflux:set_valency(2)
 synapseInflux:set_ip3_production_params(6e-20, 1.188)
 
 
+-- Dirichlet for superfluous dofs
+uselessDofDiri = DirichletBoundary()
+uselessDofDiri:add(0.0, "ca_cyt", "er")
+uselessDofDiri:add(0.0, "ip3", "er")
+uselessDofDiri:add(0.0, "clb", "er")
+uselessDofDiri:add(0.0, "ca_er", "cyt, pm")
+
 
 -- domain discretization --
 domDisc3d = DomainDiscretization(approxSpace3d)
@@ -555,6 +565,9 @@ domDisc3d:add(discPMLeak)
 domDisc3d:add(discVDCC)
 
 domDisc3d:add(synapseInflux)
+
+domDisc3d:add(uselessDofDiri)
+
 
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domDisc3d)
@@ -649,6 +662,8 @@ InterpolateInner(ip3_init, u, "ip3", 0.0)
 
 -- timestep in seconds
 dt = dt3dStart
+dtmin = 1e-9
+dtmax = 1e-2
 time = 0.0
 step = 0
 
@@ -658,80 +673,59 @@ if (generateVTKoutput) then
 	out:print(filename .. "vtk/solution3d", u, step, time)
 end
 
--- create new grid function for old value
-uOld = u:clone()
 
--- store grid function in vector of old solutions
-solTimeSeries = SolutionTimeSeries()
-solTimeSeries:push(uOld, time)
 
-min_dt = dt3d / math.pow(2,15)
-cb_interval = 4
-lv = startLv
-levelUpDelay = 0.01
-cb_counter = {}
-for i=0,startLv do cb_counter[i]=0 end
-while endTime-time > 0.001*dt do
-	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
-	
-	-- setup time Disc for old solutions and timestep
-	timeDisc:prepare_step(solTimeSeries, dt)
-	
-	-- apply newton solver
-	if newtonSolver:apply(u) == false
-	then
-		-- in case of failure:
-		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
-		
-		dt = dt/2
-		lv = lv + 1
-		VecScaleAssign(u, 1.0, solTimeSeries:latest())
-		
-		-- halve time step and try again unless time step below minimum
-		if dt < min_dt
-		then 
-			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
-			time = endTime
-		else
-			print ("Trying with half the time step...")
-			cb_counter[lv] = 0
-		end
-	else
-		-- update new time
-		time = solTimeSeries:time(0) + dt
-		
-		-- update check-back counter and, if applicable, reset dt
-		cb_counter[lv] = cb_counter[lv] + 1
-		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
-			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
-			dt = 2*dt;
-			lv = lv - 1
-			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
-			cb_counter[lv+1] = 0
-		end
-		
-		-- plot solution every pstep seconds
-		if (generateVTKoutput) then
-			if math.abs(time/pstep - math.floor(time/pstep+0.5)) < 1e-5 then
-				out:print(filename .. "vtk/solution3d", u, math.floor(time/pstep+0.5), time)
-			end
-		end
-		
-		-- get oldest solution
-		oldestSol = solTimeSeries:oldest()
-		
-		-- copy values into oldest solution (we reuse the memory here)
-		VecScaleAssign(oldestSol, 1.0, u)
-		
-		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
-		solTimeSeries:push_discard_oldest(oldestSol, time)
-		
-		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
-	end
+------------------
+--  LIMEX setup --
+------------------
+nstages = 2            -- number of stages
+stageNSteps = {1,2,3}  -- number of time steps for each stage
+tol = 0.05             -- allowed relative error ()
 
+-- convergence check
+limexConvCheck = ConvCheck(1, 1e-18, 1e-08, true)
+limexConvCheck:set_supress_unsuccessful(true)
+newtonSolver:set_convergence_check(limexConvCheck)
+
+limex = LimexTimeIntegrator(nstages)
+for i = 1, nstages do
+	limex:add_stage(stageNSteps[i], newtonSolver, domDisc3d)
 end
 
--- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(filename .. "vtk/solution3d", u) end
+limex:set_tolerance(tol)
+limex:set_time_step(dt)
+limex:set_dt_min(dtmin)
+limex:set_dt_max(dtmax)
+limex:set_increase_factor(2.0)
 
+-- GridFunction error estimator (relative norm)
+--errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
+errorEvaluator = SupErrorEvaluator("ca_cyt", "cyt", 1.0) -- function name, subset names, scale
+limexEstimator = ScaledGridFunctionEstimator()
+limexEstimator:add(errorEvaluator)
+limex:add_error_estimator(limexEstimator)
+
+-- for vtk output
+if (generateVTKoutput) then 
+	local vtkObserver = VTKOutputObserver(filename .."vtk/solution3d", out, pstep)
+	limex:attach_observer(vtkObserver)
+end
+
+
+--bicgstabSolver:set_debug(dbgWriter)
+--newtonSolver:set_debug(dbgWriter)
+--gmg:set_debug(dbgWriter)
+--convCheck:set_maximum_steps(1)
+
+-- solve problem
+limex:apply(u, endTime, u, time)
+
+
+if (generateVTKoutput) then 
+	out:write_time_pvd(filename .. "vtk/solution3d", u)
+end
+
+if doProfiling then
+	WriteProfileData(fileName .."pd.pdxml")
+end
 
