@@ -36,7 +36,7 @@ endTime = util.GetParamNumber("-endTime", 1.0)  -- in s
 withIons = util.HasParamOption("-ions")
 
 -- choice of solver setup
-solverID = util.GetParam("-solver", "GMG")
+solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
 validSolverIDs["GMG"] = 0;
@@ -57,6 +57,10 @@ pstep = util.GetParamNumber("-pstep", dt3d, "plotting interval")
 -- file handling
 filename = util.GetParam("-outName", "hybrid_test")
 filename = filename.."/"
+
+-- profiling?
+doProfiling = util.HasParamOption("-profile")
+SetOutputProfileStats(doProfiling)
 
 
 -- choose length of time step at the beginning
@@ -180,7 +184,7 @@ temp = 37.0
 ------------------------------------
 -- create 1d domain and approx space --
 ------------------------------------
-neededSubsets1d = {"soma", "dendrite"} --, "axon"}
+neededSubsets1d = {"soma", "dendrite", "apical_dendrite"} --, "axon"}
 dom1d = util.CreateDomain(gridName1d, 0, neededSubsets1d)
 
 approxSpace1d = ApproximationSpace(dom1d)
@@ -202,7 +206,7 @@ OrderCuthillMcKee(approxSpace1d, true);
 ---------------------------
 -- create 1d discretization --
 ---------------------------
-allSubsets = "soma, dendrite" --, axon"
+allSubsets = "soma, dendrite, apical_dendrite" --, axon"
 
 -- cable equation
 CE = CableEquation(allSubsets, withIons)
@@ -348,10 +352,13 @@ dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
 balancer.partitioner = "parmetis"
 
 -- protect ER membrane from being cut by partitioning
-ccw = SubsetCommunicationWeights(dom3d)
-ccw:set_weight_on_subset(1000.0, 3) -- mem_er
+--ccw = SubsetCommunicationWeights(dom3d)
+--ccw:set_weight_on_subset(1000.0, 3) -- mem_er
+--balancer.communicationWeights = ccw
 
-balancer.communicationWeights = ccw
+ssp = SideSubsetProtector(dom3d:subset_handler())
+ssp:add_protectable_subset("erm")
+
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -367,6 +374,9 @@ loadBalancer = balancer.CreateLoadBalancer(dom3d)
 -- manual refinement (need to update interface node location in each step)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(false)
+	if balancer.partitioner == "parmetis" then
+		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+	end
 	balancer.Rebalance(dom3d, loadBalancer)
 end
 
@@ -505,7 +515,9 @@ else
 end
 vdcc:set_time_steps_for_simulation_and_potential_update(dt1d, dt1d)
 vdcc:set_solver_output_verbose(verbose1d)
-vdcc:set_vtk_output(filename.."vtk/solution1d", pstep)
+if generateVTKoutput then
+	vdcc:set_vtk_output(filename.."vtk/solution1d", pstep)
+end
 vdcc:set_constant(1, 1.5)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
@@ -530,7 +542,7 @@ synapseInflux:set_current_percentage(0.01)
 synapseInflux:set_3d_neuron_ids({0})
 synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
 synapseInflux:set_valency(2)
-synapseInflux:set_ip3_production_params(6e-20, 1.188)
+synapseInflux:set_ip3_production_params(6e-21, 1.188)
 
 
 
@@ -653,7 +665,7 @@ time = 0.0
 step = 0
 
 -- initial vtk output
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
 	out:print(filename .. "vtk/solution3d", u, step, time)
 end
@@ -734,4 +746,7 @@ end
 -- end timeseries, produce gathering file
 if (generateVTKoutput) then out:write_time_pvd(filename .. "vtk/solution3d", u) end
 
+if doProfiling then
+	WriteProfileData(filename .."pd.pdxml")
+end
 

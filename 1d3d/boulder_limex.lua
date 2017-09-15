@@ -18,7 +18,7 @@ ug_load_script("plugins/Limex/limex_util.lua")
 
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 
 -- choice of grid and refinement level
@@ -37,7 +37,7 @@ endTime = util.GetParamNumber("-endTime", 1.0)  -- in s
 withIons = util.HasParamOption("-ions")
 
 -- choice of solver setup
-solverID = util.GetParam("-solver", "GMG")
+solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
 validSolverIDs["GMG"] = 0;
@@ -181,7 +181,7 @@ temp = 37.0
 ------------------------------------
 -- create 1d domain and approx space --
 ------------------------------------
-neededSubsets1d = {"soma", "dendrite"} --, "axon"}
+neededSubsets1d = {"soma", "dendrite", "apical_dendrite"} --, "axon"}
 dom1d = util.CreateDomain(gridName1d, 0, neededSubsets1d)
 
 approxSpace1d = ApproximationSpace(dom1d)
@@ -203,7 +203,7 @@ OrderCuthillMcKee(approxSpace1d, true);
 ---------------------------
 -- create 1d discretization --
 ---------------------------
-allSubsets = "soma, dendrite" --, axon"
+allSubsets = "soma, dendrite, apical_dendrite" --, axon"
 
 -- cable equation
 CE = CableEquation(allSubsets, withIons)
@@ -287,7 +287,6 @@ domDisc1d:add(CE)
 
 
 
-
 ----------------------------------
 -- constants for the 3d problem --
 ----------------------------------
@@ -343,16 +342,22 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 ----------------------------------
 -- setup 3d approximation space --
 ----------------------------------
+
+InitUG(3, AlgebraType("CPU", 4))
+
 -- create, load, refine and distribute domain
 reqSubsets = {"cyt", "er", "pm", "erm"}
 dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
 balancer.partitioner = "parmetis"
 
 -- protect ER membrane from being cut by partitioning
-ccw = SubsetCommunicationWeights(dom3d)
-ccw:set_weight_on_subset(1000.0, 3) -- mem_er
+--ccw = SubsetCommunicationWeights(dom3d)
+--ccw:set_weight_on_subset(1000.0, 3) -- mem_er
+--balancer.communicationWeights = ccw
 
-balancer.communicationWeights = ccw
+ssp = SideSubsetProtector(dom3d:subset_handler())
+ssp:add_protectable_subset("erm")
+
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -368,6 +373,9 @@ loadBalancer = balancer.CreateLoadBalancer(dom3d)
 -- manual refinement (need to update interface node location in each step)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(false)
+	if balancer.partitioner == "parmetis" then
+		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+	end
 	balancer.Rebalance(dom3d, loadBalancer)
 end
 
@@ -508,7 +516,9 @@ else
 end
 vdcc:set_time_steps_for_simulation_and_potential_update(dt1d, dt1d)
 vdcc:set_solver_output_verbose(verbose1d)
-vdcc:set_vtk_output(filename.."vtk/solution1d", pstep)
+if generateVTKoutput then
+	vdcc:set_vtk_output(filename.."vtk/solution1d", pstep)
+end
 vdcc:set_constant(1, 1.5)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
@@ -538,10 +548,10 @@ synapseInflux:set_ip3_production_params(6e-20, 1.188)
 
 -- Dirichlet for superfluous dofs
 uselessDofDiri = DirichletBoundary()
-uselessDofDiri:add(0.0, "ca_cyt", "er")
-uselessDofDiri:add(0.0, "ip3", "er")
-uselessDofDiri:add(0.0, "clb", "er")
-uselessDofDiri:add(0.0, "ca_er", "cyt, pm")
+uselessDofDiri:add(ca_cyt_init, "ca_cyt", "er")
+uselessDofDiri:add(ip3_init, "ip3", "er")
+uselessDofDiri:add(clb_init, "clb", "er")
+uselessDofDiri:add(ca_er_init, "ca_er", "cyt, pm")
 
 
 -- domain discretization --
@@ -680,7 +690,7 @@ end
 ------------------
 nstages = 2            -- number of stages
 stageNSteps = {1,2,3}  -- number of time steps for each stage
-tol = 0.05             -- allowed relative error ()
+tol = 0.01             -- allowed relative error ()
 
 -- convergence check
 limexConvCheck = ConvCheck(1, 1e-18, 1e-08, true)

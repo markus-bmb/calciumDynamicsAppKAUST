@@ -11,6 +11,26 @@
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
+
+-- save this script to whereever it is executed
+-- (esp. useful for batch jobs)
+function save_script()
+	if ProcRank() == 0 then
+		local fileNameWithPath = (debug.getinfo(2, "S")).source:sub(2)
+		local fileName = string.match(fileNameWithPath, "([^\\/]-%.?[^%.\\/]*)$")
+		
+		local infile = io.open(fileNameWithPath, "r")
+		local instr = infile:read("*a")
+		infile:close()
+		
+		local outfile = io.open(fileName, "w")
+		outfile:write(instr)
+		outfile:close()
+	end
+end
+save_script()
+
+
 -- dimension
 dim = 3
 
@@ -26,8 +46,9 @@ gridID = util.GetParam("-grid", "normSpine")
 gridName = fileName.."grid/"..gridID..".ugx"
 
 -- app length
+neckRad = util.GetParamNumber("-neckRad", 0.08)
 neckLen = util.GetParamNumber("-neckLen", 0.7)
-headRad = util.GetParamNumber("-headRad", 0.21)
+headRad = util.GetParamNumber("-headRad", 0.29)
 headLen = util.GetParamNumber("-headLen", 0.58)
 appRad = util.GetParamNumber("-appRad", 0.025)
 appLen = util.GetParamNumber("-appLen", 0.5)
@@ -51,11 +72,11 @@ if ProcRank() == 0 then
 		5.0,	-- spine position (um)
 		appRad,	-- app neck radius (um)
 		appLen,	-- app neck length (um)
-		appHeadRad - appRad,	-- app head radius (in addition to neck radius) (um)
+		appHeadRad - appRad,	-- app head radius (in addition to app neck radius) (um)
 		appHeadLen,	-- app head length (um)
-		0.08,	-- spine neck radius (um)
+		neckRad,	-- spine neck radius (um)
 		neckLen,-- spine neck length (um)
-		headRad,-- spine head radius (um)
+		headRad - neckRad,-- spine head radius (in addition to spine neck radius) (um)
 		headLen	-- spine head length (um)
 	},
 	{
@@ -70,6 +91,7 @@ if ProcRank() == 0 then
 end
 
 PclDebugBarrierAll()
+
 
 -- which ER mechanisms are to be activated?
 setting = util.GetParam("-setting", "all")
