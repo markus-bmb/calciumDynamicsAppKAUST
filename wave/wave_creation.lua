@@ -56,6 +56,12 @@ if (validSettings[setting] == nil) then
     error("Unknown setting " .. setting)
 end
 
+-- densities
+ryrDens = util.GetParamNumber("-ryrDens", 0.86)
+
+-- whether to scale synaptic influx with dendritic radius
+scaledInflux = util.HasParamOption("-scaledInflux")
+
 -- choice of algebra
 useBlockAlgebra = util.HasParamOption("-block")
 
@@ -167,7 +173,7 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- ER densities
 IP3Rdensity = 17.3
-RYRdensity = 0.86
+RYRdensity = ryrDens --0.86
 leakERconstant = 3.8e-17
 local v_s = 6.5e-27  -- V_S param of SERCA pump
 local k_s = 1.8e-7   -- K_S param of SERCA pump
@@ -211,6 +217,16 @@ function synCurrentDensityCa(z, r, t, si)
 	
     return math.pi*influx -- scale with constant radius 0.5 to keep influx constant on all geometries
 end
+function synScaledCurrentDensityCa(z, r, t, si)	
+	-- single spike (~1200 ions)
+	local influx
+	if (si == synSubset and t <= caEntryDuration)
+	then influx = 2.5e-3 * (1.0 - t/caEntryDuration)
+	else influx = 0.0
+	end
+	
+    return 2.0*math.pi*r * influx
+end
 
 ip3EntryDelay = 0.000
 ip3EntryDuration = 0.2
@@ -222,6 +238,15 @@ function synCurrentDensityIP3(z, r, t, si)
 	end
 	
     return math.pi*influx -- scale with constant radius 0.5 to keep influx constant on all geometries
+end
+function synScaledCurrentDensityIP3(z, r, t, si)
+	local influx
+	if (si == synSubset and t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration)
+	then influx = 7.5e-5 * (1.0 - t/ip3EntryDuration)
+	else influx = 0.0
+	end
+	
+    return 2.0*math.pi*r * influx
 end
 
 -------------------------------
@@ -491,11 +516,17 @@ discVDCC:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation 
 --]]
 
 -- synaptic activity
-synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
-synapseInfluxCa:set_flux_function("synCurrentDensityCa")
-synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
-synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
-
+if scaledInflux then
+	synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
+	synapseInfluxCa:set_flux_function("synScaledCurrentDensityCa")
+	synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
+	synapseInfluxIP3:set_flux_function("synScaledCurrentDensityIP3")
+else
+	synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
+	synapseInfluxCa:set_flux_function("synCurrentDensityCa")
+	synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
+	synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
+end
 
 -- domain discretization --
 domDisc = DomainDiscretization(approxSpace)
@@ -653,7 +684,7 @@ end
 ------------------
 --  LIMEX setup --
 ------------------
-nstages = 2              -- number of stages
+nstages = 3              -- number of stages
 stageNSteps = {1,2,3,4}  -- number of time steps for each stage
 
 limex = LimexTimeIntegrator(nstages)
@@ -666,6 +697,9 @@ limex:set_time_step(dt)
 limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
 limex:set_increase_factor(2.0)
+limex:set_reduction_factor(0.1)
+limex:set_stepsize_greedy_order_factor(1)
+limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
 --errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale

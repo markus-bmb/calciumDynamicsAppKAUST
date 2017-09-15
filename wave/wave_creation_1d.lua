@@ -1,13 +1,15 @@
 ------------------------------------------------------------------
 -- Examination of calcium wave prerequisites                    --
 --                                                              --
--- This script is intended to be used for simulations on 3d     --
--- model dendrites.                                             --
--- The goal of the simulations is to check that the 2d script   --
--- with rotation symmetry works alright.                        --
+-- This script is intended to be used for simulations on 1d     --
+-- representations of perfectly rotationally symmetric model    --
+-- dendrites.                                                   --
+-- The goal of the simulations is to find out whether the 2d    --
+-- rotationally symmetric case can be even further reduced to   --
+-- this 1d case.                                                --
 --                                                              --
 -- Author: mbreit                                               --
--- Date:   2017-08-08                                           --
+-- Date:   2017-08-14                                           --
 ------------------------------------------------------------------
 
 -- for profiler output
@@ -21,7 +23,7 @@ ug_load_script("plugins/Limex/limex_util.lua")
 AssertPluginsLoaded({"neuro_collection", "Limex", "Parmetis"})
 
 -- init with dimension and algebra
-InitUG(3, AlgebraType("CPU", 1))
+InitUG(1, AlgebraType("CPU", 1))
 
 EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 --SetDebugLevel(debugID.LUACompiler, 0) 
@@ -31,11 +33,30 @@ EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 -- parse command line parameters  ---
 -------------------------------------
 
--- choice of grid
-gridName = util.GetParam("-grid", "../grids/modelDendrite3d.ugx")
+-- choice of grid name
+gridName = util.GetParam("-grid", "../grids/modelDendrite1d.ugx")
 
--- refinements (global)
+-- grid parameters
+dendLength = util.GetParamNumber("-dendLength", 50.0)
+dendRadius = util.GetParamNumber("-dendRadius", 0.5)
+erRadius = util.GetParamNumber("-erRadius", 0.158)
+synArea = util.GetParamNumber("-synArea", math.pi*0.5)
+nSeg = util.GetParamNumber("-nSeg", 100)
+
+-- refinements (global and at ERM)
 numRefs = util.GetParamNumber("-numRefs", 0)
+
+-- which ER mechanisms are to be activated?
+setting = util.GetParam("-setting", "all")
+setting = string.lower(setting)
+validSettings = {}
+validSettings["all"] = 0;
+validSettings["none"] = 0;
+validSettings["ip3r"] = 0;
+validSettings["ryr"] = 0;
+if (validSettings[setting] == nil) then
+    error("Unknown setting " .. setting)
+end
 
 -- choice of solver setup
 solverID = util.GetParam("-solver", "GMG")
@@ -47,6 +68,9 @@ validSolverIDs["ILU"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
+
+-- error tolerance for Limex iteration
+tol = util.GetParamNumber("-tol", 0.01)
 
 -- specify "-verbose" to output linear solver convergence
 verbose = util.HasParamOption("-verbose")
@@ -64,9 +88,48 @@ generateVTKoutput = util.HasParamOption("-vtk")
 pstep = util.GetParamNumber("-pstep", dt, "plotting interval")
 
 
+--[[
+-----------------------
+-- geometry creation --
+-----------------------
+if ProcRank() == 0 then
+	gen = MorphoGenCD()
+	gen:set_dendrite_length(dendLength)
+	gen:set_dendrite_radius(dendRadius)
+	gen:set_er_radius(erRadius)
+	gen:set_synapse_area(synArea)
+	gen:set_num_segments(nSeg)
+	
+	gridName = outDir .. "grid/" .. gridName
+	gen:create_dendrite(gridName)
+end
+
+PclDebugBarrierAll()
+--]]
+
 ------------------------------------------------------
 --  problem constants  -------------------------------
 ------------------------------------------------------
+-- setting-dependent variables
+withIP3R = true
+withRyR = true
+withSERCAandLeak = true
+
+if setting == "none" then 
+	withIP3R = false
+	withRyR = false
+	withSERCAandLeak = false
+end
+
+if setting == "ip3r" then
+	withRyR = false
+end
+
+if setting == "ryr" then
+	withIP3R = false
+end
+
+
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
 totalClb = 4*40.0e-6
@@ -117,29 +180,33 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 
 
 -- firing pattern of the synapse
-synSubset = 4
+synSubset = 1
 caEntryDuration = 0.001
-function synCurrentDensityCa(x, y, z, t, si)	
+function synCurrentDensityCa(x, t, si)	
 	-- single spike (~1200 ions)
 	local influx
-	if (si == synSubset and t <= caEntryDuration)
+	if t <= caEntryDuration
 	then influx = 2.5e-3 * (1.0 - t/caEntryDuration)
 	else influx = 0.0
 	end
 	
-    return influx
+	-- scale with constant radius 0.5 and length 0.5 to keep influx constant on all geometries
+    -- but only half of the amount as it is added twice (once to the left, once to the right)!
+    return true, -0.25*math.pi*influx
 end
 
 ip3EntryDelay = 0.000
 ip3EntryDuration = 0.2
-function synCurrentDensityIP3(x, y, z, t, si)
+function synCurrentDensityIP3(x, t, si)
 	local influx
-	if (si == synSubset and t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration)
+	if t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration
 	then influx = 7.5e-5 * (1.0 - t/ip3EntryDuration)
 	else influx = 0.0
 	end
 	
-    return influx
+	-- scale with constant radius 0.5 and length 0.5 to keep influx constant on all geometries
+    -- but only half of the amount as it is added twice (once to the left, once to the right)!
+    return true, -0.25*math.pi*influx
 end
 
 -------------------------------
@@ -147,14 +214,42 @@ end
 -------------------------------
 
 -- load domain
-reqSubsets = {"cyt", "er", "pm", "erm", "syn", "bnd_cyt", "bnd_er"}
-dom = util.CreateDomain(gridName, 0, reqSubsets)
+reqSubsets = {"dend", "syn", "bnd"}
+dom = util.CreateDomain(gridName, numRefs, reqSubsets)
+
+-- create approximation space
+approxSpace = ApproximationSpace(dom)
+
+cytVol = "dend"
+erVol = "dend"
+plMem = "dend"
+plMem_vec = {"dend", "syn", "bnd"}
+erMem = "dend"
+erMemVec = {"dend", "syn", "bnd"}
+
+approxSpace:add_fct("ca_cyt", "Lagrange", 1)
+approxSpace:add_fct("ca_er", "Lagrange", 1)
+approxSpace:add_fct("clb", "Lagrange", 1)
+approxSpace:add_fct("ip3", "Lagrange", 1)
+approxSpace:add_fct("o2", "Lagrange", 1)
+approxSpace:add_fct("c1", "Lagrange", 1)
+approxSpace:add_fct("c2", "Lagrange", 1)
+
+approxSpace:init_levels()
+approxSpace:init_surfaces()
+approxSpace:init_top_surface()
+approxSpace:print_layout_statistic()
+approxSpace:print_statistic()
+
+OrderCuthillMcKee(approxSpace, true)
+
 
 -- in parallel environments: domain distribution
 balancer.partitioner = "parmetis"
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
+balancer.parallelElementThreshold = 8
 
 balancer.ParseParameters()
 balancer.PrintParameters()
@@ -162,11 +257,6 @@ balancer.PrintParameters()
 loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
-	if balancer.partitioner == "parmetis" then
-		ssp = SideSubsetProtector(dom:subset_handler())
-		ssp:add_protectable_subset("erm")
-		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
-	end
 	balancer.Rebalance(dom, loadBalancer)
 	loadBalancer:estimate_distribution_quality()
 	loadBalancer:print_quality_records()
@@ -175,63 +265,35 @@ if loadBalancer ~= nil then
 	end
 end
 
--- refinement
-if numRefs > 0 then	
-	local refiner = GlobalDomainRefiner(dom)	
-	for i = 1, numRefs do
-		refiner:refine()
-	end
-end
-
 print(dom:domain_info():to_string())
 SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
 --SaveParallelGridLayout(dom:grid(), outDir .. "grid/parallel_grid_layout_p"..ProcRank()..".ugx", 1.0)
 
 
--- create approximation space
-approxSpace = ApproximationSpace(dom)
-
-cytVol = "cyt"
-erVol = "er"
-plMem = "pm, syn"
-plMem_vec = {"pm, syn"}
-erMem = "erm"
-erMemVec = {"erm"}
-
-outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem .. ", bnd_cyt"
-innerDomain = erVol .. ", " .. erMem .. ", bnd_er"
-
-approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
-approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
-approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
-approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
-
-approxSpace:init_levels()
-approxSpace:init_surfaces()
-approxSpace:init_top_surface()
-approxSpace:print_layout_statistic()
-approxSpace:print_statistic()
-
---OrderCuthillMcKee(approxSpace, true)
-
-
 --------------------------
 -- setup discretization --
 --------------------------
+volScaleER = math.pi * erRadius*erRadius
+volScaleCyt = math.pi * dendRadius*dendRadius - volScaleER
+
 -- diffusion --
 diffCaCyt = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
-diffCaCyt:set_diffusion(D_cac)
+diffCaCyt:set_mass_scale(volScaleCyt)
+diffCaCyt:set_diffusion(D_cac*volScaleCyt)
 
 diffCaER = ConvectionDiffusion("ca_er", erVol, "fv1")
-diffCaER:set_diffusion(D_cae)
+diffCaER:set_mass_scale(volScaleER)
+diffCaER:set_diffusion(D_cae*volScaleER)
 
 diffClb = ConvectionDiffusion("clb", cytVol, "fv1")
-diffClb:set_diffusion(D_clb)
+diffClb:set_mass_scale(volScaleCyt)
+diffClb:set_diffusion(D_clb*volScaleCyt)
 
 diffIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
-diffIP3:set_diffusion(D_ip3)
-diffIP3:set_reaction_rate(reactionRateIP3)
-diffIP3:set_reaction(reactionTermIP3)
+diffIP3:set_mass_scale(volScaleCyt)
+diffIP3:set_diffusion(D_ip3*volScaleCyt)
+diffIP3:set_reaction_rate(reactionRateIP3*volScaleCyt)
+diffIP3:set_reaction(reactionTermIP3*volScaleCyt)
 
 
 -- buffering --
@@ -240,8 +302,8 @@ discBuffer:add_reaction(
 	"clb",                     -- the buffering substance
 	"ca_cyt",                  -- the buffered substance
 	totalClb,                  -- total amount of buffer
-	k_bind_clb,                -- binding rate constant
-	k_unbind_clb               -- unbinding rate constant
+	k_bind_clb*volScaleCyt,    -- binding rate constant
+	k_unbind_clb*volScaleCyt   -- unbinding rate constant
 )
 
 
@@ -250,10 +312,17 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
+--[[
 --ryr = RyR({"ca_cyt", "ca_er"})
 ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+--]]
+ryr = RyRImplicit({"ca_cyt", "ca_er", "o2", "c1", "c2"}, erMemVec)
+ryr:set_scale_inputs({1e3, 1e3, 1.0, 1.0, 1.0})
+ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+ryrStateDisc = RyRImplicit_1drotsym({"ca_cyt", "ca_er", "o2", "c1", "c2"}, {"dend"})
+ryrStateDisc:set_calcium_scale(1e3)
 
 serca = SERCA({"ca_cyt", "ca_er"})
 serca:set_scale_inputs({1e3,1e3})
@@ -264,17 +333,21 @@ leakER:set_scale_inputs({1e3,1e3})
 leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 
-discIP3R = MembraneTransportFV1(erMem, ip3r)
+discIP3R = MembraneTransport1d(erMem, ip3r)
 discIP3R:set_density_function(IP3Rdensity)
+discIP3R:set_radius(erRadius)
 
-discRyR = MembraneTransportFV1(erMem, ryr)
+discRyR = MembraneTransport1d(erMem, ryr)
 discRyR:set_density_function(RYRdensity)
+discRyR:set_radius(erRadius)
 
-discSERCA = MembraneTransportFV1(erMem, serca)
+discSERCA = MembraneTransport1d(erMem, serca)
 discSERCA:set_density_function(SERCAdensity)
+discSERCA:set_radius(erRadius)
 
-discERLeak = MembraneTransportFV1(erMem, leakER)
+discERLeak = MembraneTransport1d(erMem, leakER)
 discERLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
+discERLeak:set_radius(erRadius)
 
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
@@ -314,35 +387,36 @@ vdcc:set_channel_type_L() --default, but to be sure
 vdcc:init(0.0)
 --]]
 
-discPMCA = MembraneTransportFV1(plMem, pmca)
+discPMCA = MembraneTransport1d(plMem, pmca)
 discPMCA:set_density_function(pmcaDensity)
+discPMCA:set_radius(dendRadius)
 
-discNCX = MembraneTransportFV1(plMem, ncx)
+discNCX = MembraneTransport1d(plMem, ncx)
 discNCX:set_density_function(ncxDensity)
+discNCX:set_radius(dendRadius)
 
-discPMLeak = MembraneTransportFV1(plMem, leakPM)
+discPMLeak = MembraneTransport1d(plMem, leakPM)
 discPMLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
+discPMLeak:set_radius(dendRadius)
 
 --[[
 discVDCC = MembraneTransportFV1(plMem, vdcc)
 discVDCC:set_density_function(vdccDensity)
-discVDCC:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
+discIP3R:set_radius(dendRadius)
 --]]
 
 -- synaptic activity
+--[[	user flux boundary does not work in 1d
 synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
 synapseInfluxCa:set_flux_function("synCurrentDensityCa")
 synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
 synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
-
---[[ -- only for blocked algebra
--- Dirichlet for superfluous dofs
-uselessDofDiri = DirichletBoundary()
-uselessDofDiri:add(ca_cyt_init, "ca_cyt", "er")
-uselessDofDiri:add(ip3_init, "ip3", "er")
-uselessDofDiri:add(clb_init, "clb", "er")
-uselessDofDiri:add(ca_er_init, "ca_er", "cyt, pm")
 --]]
+
+synapseInfluxCa = NeumannBoundary("ca_cyt", "fv1")
+synapseInfluxCa:add("synCurrentDensityCa", "syn", cytVol)
+synapseInfluxIP3 = NeumannBoundary("ip3", "fv1")
+synapseInfluxIP3:add("synCurrentDensityIP3", "syn", cytVol)
 
 -- domain discretization --
 domDisc = DomainDiscretization(approxSpace)
@@ -354,10 +428,17 @@ domDisc:add(diffIP3)
 
 domDisc:add(discBuffer)
 
-domDisc:add(discIP3R)
-domDisc:add(discRyR)
-domDisc:add(discSERCA)
-domDisc:add(discERLeak)
+if withIP3R then
+	domDisc:add(discIP3R)
+end
+if withRyR then
+	domDisc:add(discRyR)
+	domDisc:add(ryrStateDisc) -- also add ryr as elem disc (for state variables)
+end
+if withSERCAandLeak then
+	domDisc:add(discSERCA)
+	domDisc:add(discERLeak)
+end
 
 domDisc:add(discPMCA)
 domDisc:add(discNCX)
@@ -365,9 +446,9 @@ domDisc:add(discPMLeak)
 --domDisc:add(discVDCC)
 
 domDisc:add(synapseInfluxCa)
-domDisc:add(synapseInfluxIP3)
-
---domDisc:add(uselessDofDiri)
+if withIP3R then
+	domDisc:add(synapseInfluxIP3)
+end
 
 
 -- setup time discretization --
@@ -437,12 +518,12 @@ newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-17, 1e-10)
 --newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-10)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
---newtonConvCheck:set_adaptive(true)
+newtonConvCheck:set_adaptive(true)
 
 -- Newton solver
-newtonSolver = NewtonSolver()
+newtonSolver = LimexNewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
-newtonSolver:set_convergence_check(newtonConvCheck)
+--newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_debug(dbgWriter)
 
 newtonSolver:init(op)
@@ -459,10 +540,11 @@ InterpolateInner(ca_cyt_init, u, "ca_cyt", 0.0)
 InterpolateInner(ca_er_init, u, "ca_er", 0.0)
 InterpolateInner(clb_init, u, "clb", 0.0)
 InterpolateInner(ip3_init, u, "ip3", 0.0)
+ryrStateDisc:calculate_steady_state(u)
 
 -- timestep in seconds
 dtmin = 1e-9
-dtmax = 1e-1
+dtmax = 1e-2
 time = 0.0
 step = 0
 
@@ -476,14 +558,8 @@ end
 ------------------
 --  LIMEX setup --
 ------------------
-nstages = 2            -- number of stages
-stageNSteps = {1,2,3}  -- number of time steps for each stage
-tol = 0.01             -- allowed relative error ()
-
--- convergence check
-limexConvCheck = ConvCheck(1, 1e-18, 1e-08, true)
-limexConvCheck:set_supress_unsuccessful(true)
-newtonSolver:set_convergence_check(limexConvCheck)
+nstages = 2              -- number of stages
+stageNSteps = {1,2,3,4}  -- number of time steps for each stage
 
 limex = LimexTimeIntegrator(nstages)
 for i = 1, nstages do
@@ -495,12 +571,16 @@ limex:set_time_step(dt)
 limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
 limex:set_increase_factor(2.0)
+limex:set_stepsize_greedy_order_factor(1)
+limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
 --errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvaluator = SupErrorEvaluator("ca_cyt", "cyt", 1.0) -- function name, subset names, scale
+errorEvalCa = SupErrorEvaluator("ca_cyt", "dend, syn, bnd", 1.0) -- function name, subset names, scale
+errorEvalC1 = SupErrorEvaluator("c1", "dend, syn, bnd", 1.0) -- function name, subset names, scale
 limexEstimator = ScaledGridFunctionEstimator()
-limexEstimator:add(errorEvaluator)
+limexEstimator:add(errorEvalCa)
+limexEstimator:add(errorEvalC1)
 limex:add_error_estimator(limexEstimator)
 
 -- for vtk output
