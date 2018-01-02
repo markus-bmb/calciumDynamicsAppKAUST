@@ -36,6 +36,9 @@ gridName = util.GetParam("-grid", "modelDendrite.ugx")
 -- flag for usage of existing grid
 useExistingGrid = util.HasParamOption("-useExistingGrid")
 
+-- flag for usage of LIMEX
+useLimex = not util.HasParamOption("-noLimex")
+
 -- grid parameters
 dendLength = util.GetParamNumber("-dendLength", 50.0)
 dendRadius = util.GetParamNumber("-dendRadius", 0.5)
@@ -601,12 +604,16 @@ newtonConvCheck:set_time_measurement(true)
 newtonConvCheck:set_adaptive(true)
 
 -- Newton solver
-newtonSolver = LimexNewtonSolver()
-newtonSolver:set_linear_solver(bicgstabSolver)
---newtonSolver:set_convergence_check(newtonConvCheck)
---newtonSolver:set_debug(dbgWriter)
+if useLimex then
+	newtonSolver = LimexNewtonSolver()
+else
+	newtonSolver = NewtonSolver()
+	newtonSolver:set_convergence_check(newtonConvCheck)
+end
 
-newtonSolver:init(op)
+newtonSolver:set_linear_solver(bicgstabSolver)
+--newtonSolver:set_debug(dbgWriter)
+newtonSolver:init(op)	
 
 
 -------------
@@ -635,49 +642,137 @@ if (generateVTKoutput) then
 end
 
 
-------------------
---  LIMEX setup --
-------------------
-nstages = 4                -- number of stages
-stageNSteps = {1,2,3,4,5}  -- number of time steps for each stage
 
-limex = LimexTimeIntegrator(nstages)
-for i = 1, nstages do
-	limex:add_stage(stageNSteps[i], newtonSolver, domDisc)
+-- solve using LIMEX --
+if useLimex then
+	nstages = 4                -- number of stages
+	stageNSteps = {1,2,3,4,5}  -- number of time steps for each stage
+	
+	limex = LimexTimeIntegrator(nstages)
+	for i = 1, nstages do
+		limex:add_stage(stageNSteps[i], newtonSolver, domDisc)
+	end
+	
+	limex:set_tolerance(tol)
+	limex:set_time_step(dt)
+	limex:set_dt_min(dtmin)
+	limex:set_dt_max(dtmax)
+	limex:set_increase_factor(2.0)
+	limex:set_reduction_factor(0.1)
+	limex:set_stepsize_greedy_order_factor(0.5)
+	limex:set_stepsize_safety_factor(0.25)
+	
+	-- GridFunction error estimator (relative norm)
+	--errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
+	errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
+	errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
+	limexEstimator = ScaledGridFunctionEstimator()
+	limexEstimator:add(errorEvalCa)
+	limexEstimator:add(errorEvalC1)
+	limex:add_error_estimator(limexEstimator)
+	
+	-- for vtk output
+	if (generateVTKoutput) then 
+		local vtkObserver = VTKOutputObserver(outDir .."vtk/solution", out, pstep)
+		limex:attach_observer(vtkObserver)
+	end
+	
+	--bicgstabSolver:set_debug(dbgWriter)
+	--newtonSolver:set_debug(dbgWriter)
+	--gmg:set_debug(dbgWriter)
+	--convCheck:set_maximum_steps(1)
+	
+	-- solve problem
+	limex:apply(u, endTime, u, time)
+	
+-- solve using implicit Euler and Newton --
+else
+	-- align start time step
+	dtStart = util.GetParamNumber("-dtStart", dt)
+	function log2(x)
+		return math.log(x)/math.log(2)
+	end
+	startLv = math.ceil(log2(dt/dtStart))
+	dtStartNew = dt / math.pow(2, startLv)
+	if (math.abs(dtStartNew-dtStart)/dtStart > 1e-5) then 
+		print("dtStart argument ("..dtStart..") was not admissible;" ..
+		       "taking "..dtStartNew.." instead.")
+	end
+	dt = dtStartNew
+		
+	-- create new grid function for old value
+	uOld = u:clone()
+	
+	-- store grid function in vector of  old solutions
+	solTimeSeries = SolutionTimeSeries()
+	solTimeSeries:push(uOld, time)
+	
+	-- start iterating in time	
+	min_dt = dt / math.pow(2,15)
+	cb_interval = 10
+	lv = startLv
+	levelUpDelay = 0
+	cb_counter = {}
+	for i = 0, startLv do cb_counter[i] = 0 end
+	while endTime-time > 0.001*dt do
+		print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
+		
+		-- setup time Disc for old solutions and timestep
+		timeDisc:prepare_step(solTimeSeries, dt)
+		
+		-- apply newton solver
+		if newtonSolver:apply(u) == false
+		then
+			-- in case of failure:
+			print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
+	
+			dt = dt/2
+			lv = lv + 1
+			VecScaleAssign(u, 1.0, solTimeSeries:latest())
+			
+			-- halve time step and try again unless time step below minimum
+			if dt < min_dt
+			then 
+				print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
+				time = endTime
+			else
+				print ("Trying with half the time step...")
+				cb_counter[lv] = 0
+			end
+		else
+			-- update new time
+			time = solTimeSeries:time(0) + dt
+			
+			-- update check-back counter and if applicable, reset dt
+			cb_counter[lv] = cb_counter[lv] + 1
+			while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+				print ("Doubling time due to continuing convergence; now: " .. 2*dt)
+				dt = 2*dt;
+				lv = lv - 1
+				cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
+				cb_counter[lv+1] = 0
+			end
+			
+			-- plot solution every pstep seconds
+			if (generateVTKoutput) then
+				if math.abs(time/pstep - math.floor(time/pstep+0.5)) < 1e-5 then
+					out:print(outDir .. "vtk/solution", u, math.floor(time/pstep+0.5), time)
+				end
+			end
+			
+			-- get oldest solution
+			oldestSol = solTimeSeries:oldest()
+			
+			-- copy values into oldest solution (we reuse the memory here)
+			VecScaleAssign(oldestSol, 1.0, u)
+			
+			-- push oldest solutions with new values to front, oldest sol pointer is popped from end
+			solTimeSeries:push_discard_oldest(oldestSol, time)
+			
+			print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
+		end
+	end
 end
-
-limex:set_tolerance(tol)
-limex:set_time_step(dt)
-limex:set_dt_min(dtmin)
-limex:set_dt_max(dtmax)
-limex:set_increase_factor(2.0)
-limex:set_reduction_factor(0.1)
-limex:set_stepsize_greedy_order_factor(0.5)
-limex:set_stepsize_safety_factor(0.25)
-
--- GridFunction error estimator (relative norm)
---errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
-errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
-limexEstimator = ScaledGridFunctionEstimator()
-limexEstimator:add(errorEvalCa)
-limexEstimator:add(errorEvalC1)
-limex:add_error_estimator(limexEstimator)
-
--- for vtk output
-if (generateVTKoutput) then 
-	local vtkObserver = VTKOutputObserver(outDir .."vtk/solution", out, pstep)
-	limex:attach_observer(vtkObserver)
-end
-
-
---bicgstabSolver:set_debug(dbgWriter)
---newtonSolver:set_debug(dbgWriter)
---gmg:set_debug(dbgWriter)
---convCheck:set_maximum_steps(1)
-
--- solve problem
-limex:apply(u, endTime, u, time)
 
 
 if (generateVTKoutput) then 
