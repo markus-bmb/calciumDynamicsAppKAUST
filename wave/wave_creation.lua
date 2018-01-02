@@ -33,6 +33,9 @@ EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 -- choice of grid name
 gridName = util.GetParam("-grid", "modelDendrite.ugx")
 
+-- flag for usage of existing grid
+useExistingGrid = util.HasParamOption("-useExistingGrid")
+
 -- grid parameters
 dendLength = util.GetParamNumber("-dendLength", 50.0)
 dendRadius = util.GetParamNumber("-dendRadius", 0.5)
@@ -106,21 +109,20 @@ end
 -----------------------
 -- geometry creation --
 -----------------------
-
-if ProcRank() == 0 then
-	gen = MorphoGenCD()
-	gen:set_dendrite_length(dendLength)
-	gen:set_dendrite_radius(dendRadius)
-	gen:set_er_radius(erRadius)
-	gen:set_synapse_area(synArea)
-	gen:set_num_segments(nSeg)
-	
-	gridName = outDir .. "grid/" .. gridName
-	gen:create_dendrite(gridName)
+if not useExistingGrid then
+	if ProcRank() == 0 then
+		gen = MorphoGenCD()
+		gen:set_dendrite_length(dendLength)
+		gen:set_dendrite_radius(dendRadius)
+		gen:set_er_radius(erRadius)
+		gen:set_synapse_area(synArea)
+		gen:set_num_segments(nSeg)
+		
+		gridName = outDir .. "grid/" .. gridName
+		gen:create_dendrite(gridName)
+	end
+	PclDebugBarrierAll()
 end
-
-PclDebugBarrierAll()
-
 
 -------------------------
 --  problem constants  --
@@ -321,7 +323,7 @@ balancer.partitioner = "parmetis"
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
-balancer.parallelElementThreshold = 8
+balancer.parallelElementThreshold = 4
 
 balancer.ParseParameters()
 balancer.PrintParameters()
@@ -343,7 +345,7 @@ if loadBalancer ~= nil then
 end
 
 print(dom:domain_info():to_string())
-SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
+--SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
 --SaveParallelGridLayout(dom:grid(), outDir .. "grid/parallel_grid_layout_p"..ProcRank()..".ugx", 1.0)
 
 
@@ -684,8 +686,8 @@ end
 ------------------
 --  LIMEX setup --
 ------------------
-nstages = 3              -- number of stages
-stageNSteps = {1,2,3,4}  -- number of time steps for each stage
+nstages = 4                -- number of stages
+stageNSteps = {1,2,3,4,5}  -- number of time steps for each stage
 
 limex = LimexTimeIntegrator(nstages)
 for i = 1, nstages do
@@ -698,7 +700,7 @@ limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
 limex:set_increase_factor(2.0)
 limex:set_reduction_factor(0.1)
-limex:set_stepsize_greedy_order_factor(1)
+limex:set_stepsize_greedy_order_factor(0.5)
 limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)

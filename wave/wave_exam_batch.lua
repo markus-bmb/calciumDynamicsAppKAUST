@@ -25,25 +25,25 @@ if bisecParam == "erRad" then
 	dendRadius = util.GetParamNumber("-dendRadius", 0.5)
 	erRadius = dendRadius / 16.0
 	inc = erRadius	
-	accuracy = 0.01 * dendRadius
+	accuracy = 0.001
 elseif bisecParam == "ryrDens" then
 	ryrDens = 1.0
 	inc = ryrDens
-	accuracy = 0.01
+	accuracy = 0.001
 else
 	error("Illegal bisection parameter '" .. bisecParam .. "' chosen.\n"
 		  .. "Valid values are 'erRad' and 'ryrDens'.")
 end
 
 -- phase 1: double parameter until wave is elicited
-wave = false -- global variable wave will be set to true by simulation script
-			 -- iff a wave has been detected
+waveHitEnd = false -- global variable waveHitEnd will be set to true by simulation script
+			       -- iff a wave has been detected
 while true do
 	-- execute simulation with this parameter setting
 	print("Executing simulation script '" .. simFile .. "' ...")
 	dofile(simFile)
 	
-	if not wave then
+	if not waveHitEnd then
 		print("")
 		print("----------------------------------")
 		print("No wave has been elicited.")
@@ -51,7 +51,7 @@ while true do
 			if erRadius >= 0.95*dendRadius then
 				print("ERROR: Even with an ER radius of >= 0.95*dendRadius, "
 					  .. "no calcium wave could be elicited.")
-				exit(1)
+				exit()
 			end
 			inc = erRadius
 			erRadius = 2.0*erRadius
@@ -78,7 +78,7 @@ while inc > accuracy do
 	-- adjust bisection parameter
 	print("")
 	print("----------------------------------")
-	if wave then
+	if waveHitEnd then
 		print("A calcium wave has been elicited.")
 		if bisecParam == "erRad" then
 			erRadius = erRadius - inc
@@ -113,14 +113,14 @@ print("")
 print("")
 print("----------------------------------------------")
 if bisecParam == "erRad" then
-	if wave then
+	if waveHitEnd then
 		erRadius = erRadius - inc
 	else
 		erRadius = erRadius + inc
 	end
 	print("erRadius threshold: " .. erRadius .." +/- " .. inc)
 elseif bisecParam == "ryrDens" then
-	if wave then
+	if waveHitEnd then
 		ryrDens = ryrDens - inc
 	else
 		ryrDens = ryrDens + inc

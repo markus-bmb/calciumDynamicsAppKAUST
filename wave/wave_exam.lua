@@ -39,7 +39,7 @@ dendLength = util.GetParamNumber("-dendLength", 50.0)
 dendRadius = util.GetParamNumber("-dendRadius", dendRadius or 0.5)
 erRadius = util.GetParamNumber("-erRadius", erRadius or 0.158)
 synArea = util.GetParamNumber("-synArea", math.pi*0.5)
-nSeg = util.GetParamNumber("-nSeg", 100)
+nSeg = util.GetParamNumber("-nSeg", 96)
 
 -- refinements (global and at ERM)
 numGlobRefs = util.GetParamNumber("-numGlobRefs", 0)
@@ -59,6 +59,9 @@ end
 
 -- densities
 ryrDens = util.GetParamNumber("-ryrDens", ryrDens or 0.86)
+
+-- buffer
+totalBuffer = util.GetParamNumber("-totBuf", 4*40.0e-6)
 
 -- whether to scale synaptic influx with dendritic radius
 scaledInflux = util.HasParamOption("-scaledInflux")
@@ -146,7 +149,7 @@ end
 
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
-totalClb = 4*40.0e-6
+totalClb = totalBuffer
 
 -- diffusion coefficients
 D_cac = 220.0
@@ -301,7 +304,7 @@ balancer.partitioner = "parmetis"
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
-balancer.parallelElementThreshold = 8
+balancer.parallelElementThreshold = 4
 
 balancer.ParseParameters()
 balancer.PrintParameters()
@@ -323,7 +326,7 @@ if loadBalancer ~= nil then
 end
 
 print(dom:domain_info():to_string())
-SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
+--SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
 --SaveParallelGridLayout(dom:grid(), outDir .. "grid/parallel_grid_layout_p"..ProcRank()..".ugx", 1.0)
 
 
@@ -690,12 +693,27 @@ if generateVTKoutput then
 end
 
 -- for measurements
-wave = false
+waveHitEnd = false
+waveGotStuck = false
+maxRyRFluxDens = 0.0
+stuckWaveXPos = 0.0
+interruptTime = 0.0
 
 function measWaveActivity(step, time, dt)
 	local measConc = take_measurement(measObserver:get_current_solution(), time, "meas", "ca_cyt", outDir.."meas/caAtRightEnd_erRad"..erRadius.."_ryrDens"..ryrDens)
 	if measConc > 4*ca_cyt_init then
-		wave = true
+		waveHitEnd = true
+		interruptTime = time
+		limex:interrupt()
+	end
+	
+	local ryrFluxDens = max_ryr_flux_density(measObserver:get_current_solution(), "ca_cyt, ca_er, c1, c2", "erm", ryr)
+	if ryrFluxDens > maxRyRFluxDens then
+		maxRyRFluxDens = ryrFluxDens
+	elseif ryrFluxDens < 0.25 * maxRyRFluxDens then -- wave got stuck
+		waveGotStuck = true
+		stuckWaveXPos = wave_front_x(measObserver:get_current_solution(), "c1, c2", "erm", 0.1)
+		interruptTime = time
 		limex:interrupt()
 	end
 	
@@ -710,16 +728,32 @@ limex:attach_observer(measObserver)
 -- solve problem
 limex:apply(u, endTime, u, time)
 
-if wave then
+-- output outcome
+print("")
+if waveHitEnd then
+	avgVelocity = dendLength / interruptTime / 1000.0
 	print("#######################################")
 	print("## A calcium wave has been detected. ##")
+	print(string.format("## Average velocity was %5.3f um/ms. ##", avgVelocity))
 	print("#######################################")
+elseif waveGotStuck then
+	interruptTimeMs = interruptTime * 1000.0
+	print("##################################")
+	print("## A calcium wave terminated at ##")
+	print(string.format("## t = %5.2f ms, x = %5.2f um.  ##", interruptTimeMs, stuckWaveXPos+0.5*dendLength))
+	print("##################################")
+else
+	print("###########################################")
+	print("## A calcium wave has been elicited, but ##")
+	print("## neither terminated nor hit the end.   ##")
+	print("###########################################")
 end
 
 
 if (generateVTKoutput) then 
 	out:write_time_pvd(outDir .. "vtk/solution", u)
 end
+
 
 if doProfiling then
 	WriteProfileData(outDir .."pd.pdxml")
