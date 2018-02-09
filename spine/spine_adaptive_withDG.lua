@@ -242,10 +242,27 @@ if leakPMconstant < 0 then error("PM leak flux is outward for these density sett
 synSubset = 6
 caEntryDuration = 0.001 -- was: 0.01
 
+
+--[[
+-- AMPAR
+g_max = 0.1
+tau = 0.0058
+
+-- NMDAR
+g_max = 0.023 -- 0.23 mol/(um^2 s) * (um^3/dm^3)
+              -- = 1% of 80pA (synaptic max current) per 0.0181um^2 synapse area (times 1/(2F))
+tau = 0.15    -- 150 ms (both values: Destexhe, Mainen & Sejnowski, 1995)
+--]]
+
+--arbitrary
+g_max = 0.005
+tau = 0.01
+
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50	-- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 1	-- number of spikes	
 function synCurrentDensityCa(x, y, z, t, si)	
+	--[[
 	-- spike train
 	if (si == synSubset and t <= caEntryDuration + (nSpikes - 1) * 1.0/freq) then
         t = t % (1.0/freq)
@@ -257,6 +274,13 @@ function synCurrentDensityCa(x, y, z, t, si)
 	else influx = 0.0
 	end
     return influx
+    --]]
+    
+    if si ~= synSubset then
+    	return 0.0
+    end
+    
+    return g_max * math.exp(-t/tau)
 end
 
 -- burst of ip3 at active synapse (triangular, immediate)
