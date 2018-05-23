@@ -576,8 +576,8 @@ limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
 --errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvalCa = SupErrorEvaluator("ca_cyt", "dend, syn, bnd", 1.0) -- function name, subset names, scale
-errorEvalC1 = SupErrorEvaluator("c1", "dend, syn, bnd", 1.0) -- function name, subset names, scale
+errorEvalCa = SupErrorEvaluator("ca_cyt", "dend, syn, bnd") -- function name, subset names
+errorEvalC1 = SupErrorEvaluator("c1", "dend, syn, bnd") -- function name, subset names
 limexEstimator = ScaledGridFunctionEstimator()
 limexEstimator:add(errorEvalCa)
 limexEstimator:add(errorEvalC1)

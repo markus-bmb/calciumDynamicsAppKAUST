@@ -16,7 +16,7 @@
 ug_load_script("ug_util.lua")
 
 -- current working directory
-simFile = FindFileInStandardPaths("wave_exam.lua")
+simFile = FindFileInStandardPaths("calciumDynamics_app/wave/wave_exam.lua")
 
 -- choice of bisection parameter
 bisecParam = util.GetParam("-bisec", "erRad")

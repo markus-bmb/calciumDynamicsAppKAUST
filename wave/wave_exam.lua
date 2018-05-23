@@ -176,12 +176,13 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 -- ER densities
 IP3Rdensity = 17.3
 RYRdensity = ryrDens --0.86
-leakERconstant = 3.8e-17
 local v_s = 6.5e-27  -- V_S param of SERCA pump
 local k_s = 1.8e-7   -- K_S param of SERCA pump
 local j_ip3r = 3.7606194166520605e-23   -- single channel IP3R flux (mol/s) - to be determined via gdb
 local j_ryr = 1.1201015633466695e-21    -- single channel RyR flux (mol/s) - to be determined via gdb
 				  						-- ryr1: 1.1204582669024472e-21	
+--[[
+leakERconstant = 3.8e-17
 local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 
 
@@ -194,6 +195,24 @@ if withRyR then
 end
 SERCAdensity = SERCAfluxDensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 if (SERCAdensity < 0) then error("SERCA flux density is outward for these density settings!") end
+--]]
+---[[
+SERCAdensity = 1973.0
+SERCAflux = v_s / (k_s / ca_cyt_init + 1.0) / ca_er_init
+
+netEquilFlux = SERCAdensity*SERCAflux
+if withIP3R then 
+	netEquilFlux = netEquilFlux - IP3Rdensity * j_ip3r
+end
+if withRyR then
+	netEquilFlux = netEquilFlux - RYRdensity * j_ryr
+end
+
+leakERconstant = netEquilFlux / (ca_er_init - ca_cyt_init)
+if (leakERconstant < 0) then
+	error("ER leakage flux density is outward for these density settings!")
+end
+--]]
 
 -- PM densities
 pmcaDensity = 500.0
@@ -313,9 +332,12 @@ loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
-		ssp = SideSubsetProtector(dom:subset_handler())
-		ssp:add_protectable_subset("erm")
-		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+		mu = ManifoldUnificator(dom)
+		mu:add_protectable_subsets("erm")
+		cdgm = FaceClusteredDualGraphManager()
+		cdgm:add_unificator(FaceSiblingUnificator())
+		cdgm:add_unificator(mu)
+		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
 	balancer.Rebalance(dom, loadBalancer)
 	loadBalancer:estimate_distribution_quality()
@@ -679,8 +701,8 @@ limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
 --errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt", 1.0) -- function name, subset names, scale
-errorEvalC1 = SupErrorEvaluator("c1", "erm", 1.0) -- function name, subset names, scale
+errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
+errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
 limexEstimator = ScaledGridFunctionEstimator()
 limexEstimator:add(errorEvalCa)
 limexEstimator:add(errorEvalC1)
@@ -699,20 +721,56 @@ maxRyRFluxDens = 0.0
 stuckWaveXPos = 0.0
 interruptTime = 0.0
 
+
+-- prepare output
+if ProcRank() == 0 then
+	waveFrontPosFile = outDir.."meas/waveFrontX.dat"
+	waveFrontPosFH = assert(io.open(waveFrontPosFile, "a"))
+end
+measInterval = 1e-4
+lastMeasPt = -1
+--wpe = WaveProfileExporter(approxSpace, "ca_cyt", "erm", outDir .. "meas/waveProfile")
+
+
 function measWaveActivity(step, time, dt)
-	local measConc = take_measurement(measObserver:get_current_solution(), time, "meas", "ca_cyt", outDir.."meas/caAtRightEnd_erRad"..erRadius.."_ryrDens"..ryrDens)
+	curSol = measObserver:get_current_solution()
+
+	-- measure concentration at right end
+	local measConc = take_measurement(curSol, time, "meas", "ca_cyt", outDir.."meas/caAtRightEnd_erRad"..erRadius.."_ryrDens"..ryrDens)
 	if measConc > 4*ca_cyt_init then
 		waveHitEnd = true
 		interruptTime = time
 		limex:interrupt()
 	end
 	
-	local ryrFluxDens = max_ryr_flux_density(measObserver:get_current_solution(), "ca_cyt, ca_er, c1, c2", "erm", ryr)
+	-- measure wave front x position
+	local measPt = math.floor(time/measInterval)
+	waveFrontXPos = wave_front_x(curSol, "c1, c2", "erm", 0.1)
+	if measPt > lastMeasPt then
+		-- write current wave front location to file
+		if ProcRank() == 0 then
+			if waveFrontXPos < -1e10 then
+				waveFrontPosFH:write(time, "\t", 0.0, "\n")
+			else
+				waveFrontPosFH:write(time, "\t", waveFrontXPos + 25.0, "\n")
+			end
+			waveFrontPosFH:flush()
+		end
+		
+		-- write complete wave profile to file
+		--wpe:exportWaveProfileX(curSol, time)
+	
+		lastMeasPt = measPt	
+	end
+	
+	
+	-- measure maximal RyR flux density
+	local ryrFluxDens = max_ryr_flux_density(curSol, "ca_cyt, ca_er, c1, c2", "erm", ryr)
 	if ryrFluxDens > maxRyRFluxDens then
 		maxRyRFluxDens = ryrFluxDens
 	elseif ryrFluxDens < 0.25 * maxRyRFluxDens then -- wave got stuck
 		waveGotStuck = true
-		stuckWaveXPos = wave_front_x(measObserver:get_current_solution(), "c1, c2", "erm", 0.1)
+		stuckWaveXPos = waveFrontXPos
 		interruptTime = time
 		limex:interrupt()
 	end
@@ -724,7 +782,7 @@ measObserver = LuaCallbackObserver()
 measObserver:set_callback("measWaveActivity")
 limex:attach_observer(measObserver)
 
-
+	
 -- solve problem
 limex:apply(u, endTime, u, time)
 
@@ -747,6 +805,12 @@ else
 	print("## A calcium wave has been elicited, but ##")
 	print("## neither terminated nor hit the end.   ##")
 	print("###########################################")
+end
+
+
+-- close output files
+if ProcRank() == 0 then
+	waveFrontPosFH:close()
 end
 
 

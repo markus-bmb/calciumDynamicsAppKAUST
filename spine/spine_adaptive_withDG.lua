@@ -190,6 +190,7 @@ k_bind_clb = 	27.0e06
 k_unbind_clb = 	19
 
 -- initial concentrations
+ca_ext = 1e-3
 ca_cyt_init = 5.0e-08 --4.0e-8
 ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
@@ -262,7 +263,7 @@ tau = 0.01
 freq = 50	-- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 1	-- number of spikes	
 function synCurrentDensityCa(x, y, z, t, si)	
-	--[[
+	---[[
 	-- spike train
 	if (si == synSubset and t <= caEntryDuration + (nSpikes - 1) * 1.0/freq) then
         t = t % (1.0/freq)
@@ -275,12 +276,13 @@ function synCurrentDensityCa(x, y, z, t, si)
 	end
     return influx
     --]]
-    
+    --[[
     if si ~= synSubset then
     	return 0.0
     end
     
     return g_max * math.exp(-t/tau)
+    --]]
 end
 
 -- burst of ip3 at active synapse (triangular, immediate)
@@ -456,18 +458,18 @@ discERLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M
 
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
-pmca:set_constant(1, 1.0)
-pmca:set_scale_inputs({1e3,1.0})
+pmca:set_constant(1, ca_ext)
+pmca:set_scale_inputs({1e3,1e3})
 pmca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 ncx = NCX({"ca_cyt", ""})
-ncx:set_constant(1, 1.0)
-ncx:set_scale_inputs({1e3,1.0})
+ncx:set_constant(1, ca_ext)
+ncx:set_scale_inputs({1e3,1e3})
 ncx:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 leakPM = Leak({"", "ca_cyt"})
-leakPM:set_constant(0, 1.0)
-leakPM:set_scale_inputs({1.0,1e3})
+leakPM:set_constant(0, ca_ext)
+leakPM:set_scale_inputs({1e3,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 --[[
@@ -497,7 +499,7 @@ discNCX = MembraneTransportFV1(plMem, ncx)
 discNCX:set_density_function(ncxDensity)
 
 discPMLeak = MembraneTransportFV1(plMem, leakPM)
-discPMLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
+discPMLeak:set_density_function(1e9*leakPMconstant / (ca_ext - ca_cyt_init))
 
 --discVDCC = MembraneTransportFV1(plMem, vdcc)
 --discVDCC:set_density_function(vdccDensity)
