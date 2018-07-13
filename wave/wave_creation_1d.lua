@@ -20,7 +20,7 @@ ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 ug_load_script("plugins/Limex/limex_util.lua")
 
-AssertPluginsLoaded({"neuro_collection", "Limex", "Parmetis"})
+AssertPluginsLoaded({"neuro_collection", "Limex"})
 
 -- init with dimension and algebra
 InitUG(1, AlgebraType("CPU", 1))
@@ -37,11 +37,8 @@ EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 gridName = util.GetParam("-grid", "../grids/modelDendrite1d.ugx")
 
 -- grid parameters
-dendLength = util.GetParamNumber("-dendLength", 50.0)
 dendRadius = util.GetParamNumber("-dendRadius", 0.5)
 erRadius = util.GetParamNumber("-erRadius", 0.158)
-synArea = util.GetParamNumber("-synArea", math.pi*0.5)
-nSeg = util.GetParamNumber("-nSeg", 100)
 
 -- refinements (global and at ERM)
 numRefs = util.GetParamNumber("-numRefs", 0)
@@ -87,25 +84,6 @@ outDir = outDir .. "/"
 generateVTKoutput = util.HasParamOption("-vtk")
 pstep = util.GetParamNumber("-pstep", dt, "plotting interval")
 
-
---[[
------------------------
--- geometry creation --
------------------------
-if ProcRank() == 0 then
-	gen = MorphoGenCD()
-	gen:set_dendrite_length(dendLength)
-	gen:set_dendrite_radius(dendRadius)
-	gen:set_er_radius(erRadius)
-	gen:set_synapse_area(synArea)
-	gen:set_num_segments(nSeg)
-	
-	gridName = outDir .. "grid/" .. gridName
-	gen:create_dendrite(gridName)
-end
-
-PclDebugBarrierAll()
---]]
 
 ------------------------------------------------------
 --  problem constants  -------------------------------
@@ -209,6 +187,7 @@ function synCurrentDensityIP3(x, t, si)
     return true, -0.25*math.pi*influx
 end
 
+
 -------------------------------
 -- setup approximation space --
 -------------------------------
@@ -245,7 +224,7 @@ OrderCuthillMcKee(approxSpace, true)
 
 
 -- in parallel environments: domain distribution
-balancer.partitioner = "parmetis"
+balancer.partitioner = "dynBisection"
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -260,14 +239,11 @@ if loadBalancer ~= nil then
 	balancer.Rebalance(dom, loadBalancer)
 	loadBalancer:estimate_distribution_quality()
 	loadBalancer:print_quality_records()
-	if balancer.partitioner == "parmetis" then
-		print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
-	end
 end
 
 print(dom:domain_info():to_string())
 SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
---SaveParallelGridLayout(dom:grid(), outDir .. "grid/parallel_grid_layout_p"..ProcRank()..".ugx", 1.0)
+SaveParallelGridLayout(dom:grid(), outDir .. "grid/parallel_grid_layout_p"..ProcRank()..".ugx", 1.0)
 
 
 --------------------------
@@ -312,12 +288,6 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
---[[
---ryr = RyR({"ca_cyt", "ca_er"})
-ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
-ryr:set_scale_inputs({1e3,1e3})
-ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
---]]
 ryr = RyRImplicit({"ca_cyt", "ca_er", "o2", "c1", "c2"}, erMemVec)
 ryr:set_scale_inputs({1e3, 1e3, 1.0, 1.0, 1.0})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
@@ -365,27 +335,6 @@ leakPM:set_constant(0, 1.0)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
---[[
-vdcc = VDCC_BG_CN({"ca_cyt", ""}, plMem_vec, approxSpace1d, approxSpace, "v")
-vdcc:set_domain_disc_1d(domDisc1d)
-vdcc:set_cable_disc(CE)
-vdcc:set_coordinate_scale_factor_3d_to_1d(1e-6)
-if withIons then
-	vdcc:set_initial_values({v_eq, k_in, na_in, ca_in})
-else
-	vdcc:set_initial_values({v_eq})
-end
-vdcc:set_time_steps_for_simulation_and_potential_update(dt1d, dt1d)
-vdcc:set_solver_output_verbose(verbose1d)
-if generateVTKoutput then
-	vdcc:set_vtk_output(outDir.."vtk/solution1d", pstep)
-end
-vdcc:set_constant(1, 1.5)
-vdcc:set_scale_inputs({1e3,1.0})
-vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-vdcc:set_channel_type_L() --default, but to be sure
-vdcc:init(0.0)
---]]
 
 discPMCA = MembraneTransport1d(plMem, pmca)
 discPMCA:set_density_function(pmcaDensity)
@@ -399,24 +348,12 @@ discPMLeak = MembraneTransport1d(plMem, leakPM)
 discPMLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 discPMLeak:set_radius(dendRadius)
 
---[[
-discVDCC = MembraneTransportFV1(plMem, vdcc)
-discVDCC:set_density_function(vdccDensity)
-discIP3R:set_radius(dendRadius)
---]]
-
--- synaptic activity
---[[	user flux boundary does not work in 1d
-synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
-synapseInfluxCa:set_flux_function("synCurrentDensityCa")
-synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
-synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
---]]
 
 synapseInfluxCa = NeumannBoundary("ca_cyt", "fv1")
 synapseInfluxCa:add("synCurrentDensityCa", "syn", cytVol)
 synapseInfluxIP3 = NeumannBoundary("ip3", "fv1")
 synapseInfluxIP3:add("synCurrentDensityIP3", "syn", cytVol)
+
 
 -- domain discretization --
 domDisc = DomainDiscretization(approxSpace)
@@ -443,7 +380,6 @@ end
 domDisc:add(discPMCA)
 domDisc:add(discNCX)
 domDisc:add(discPMLeak)
---domDisc:add(discVDCC)
 
 domDisc:add(synapseInfluxCa)
 if withIP3R then
@@ -589,11 +525,6 @@ if (generateVTKoutput) then
 	limex:attach_observer(vtkObserver)
 end
 
-
---bicgstabSolver:set_debug(dbgWriter)
---newtonSolver:set_debug(dbgWriter)
---gmg:set_debug(dbgWriter)
---convCheck:set_maximum_steps(1)
 
 -- solve problem
 limex:apply(u, endTime, u, time)
