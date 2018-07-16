@@ -20,7 +20,7 @@ ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 ug_load_script("plugins/Limex/limex_util.lua")
 
-AssertPluginsLoaded({"neuro_collection", "Limex", "Parmetis", "nernst_planck"})  -- PNP for ChargeMarking
+AssertPluginsLoaded({"neuro_collection", "Limex", "Parmetis"})
 
 EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 --SetDebugLevel(debugID.LUACompiler, 0) 
@@ -301,7 +301,7 @@ end
 
 
 -- ERM refinements
-strat = ChargeMarking(2.0, 7)
+strat = SurfaceMarking(2.0, 7)
 strat:add_surface(3,0)	-- erm / outer
 
 refiner = HangingNodeDomainRefiner(dom)
