@@ -30,7 +30,6 @@ gridSyn = string.sub(gridName1d, 1, string.len(gridName1d) - 4) .. "_syn.ugx"
 -- parameters for instationary simulation
 dt1d = util.GetParamNumber("-dt1d", 1e-5) -- in s
 dt3d = util.GetParamNumber("-dt3d", 1e-2) -- in s
-dt3dStart = util.GetParamNumber("-dt3dstart", dt3d)
 endTime = util.GetParamNumber("-endTime", 1.0)  -- in s
 
 -- with simulation of single ion concentrations?
@@ -60,25 +59,11 @@ filename = util.GetParam("-outName", "hybrid_test")
 filename = filename.."/"
 
 
--- choose length of time step at the beginning
--- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
-function log2(x)
-	return math.log(x) / math.log(2)
-end
-startLv =  math.ceil(log2(dt3d / dt3dStart))
-dt3dStartNew = dt3d / math.pow(2, startLv)
-if (math.abs(dt3dStartNew - dt3dStart) / dt3dStart > 1e-5) then 
-	print("dt3dStart argument ("..dt3dStart..") was not admissible; taking "..dt3dStartNew.." instead.")
-end
-dt3dStart = dt3dStartNew
-
-
 print("Chosen parameters:")
 print("    grid       = " .. gridName1d)
 print("    numRefs    = " .. numRefs)
 print("    dt1d       = " .. dt1d)
 print("    dt3d       = " .. dt3d)
-print("    dt3dStart  = " .. dt3dStart)
 print("    endTime    = " .. endTime)
 print("    pstep      = " .. pstep)
 print("    ions       = " .. tostring(withIons))
@@ -192,10 +177,7 @@ if withIons == true then
 	approxSpace1d:add_fct("ca", "Lagrange", 1)
 end
 
-approxSpace1d:init_levels();
-approxSpace1d:init_surfaces();
-approxSpace1d:init_top_surface();
-approxSpace1d:print_layout_statistic()
+approxSpace1d:init_top_surface()
 approxSpace1d:print_statistic()
 
 OrderCuthillMcKee(approxSpace1d, true);
@@ -349,15 +331,6 @@ InitUG(3, AlgebraType("CPU", 4))
 reqSubsets = {"cyt", "er", "pm", "erm"}
 dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
 balancer.partitioner = "parmetis"
-
--- protect ER membrane from being cut by partitioning
---ccw = SubsetCommunicationWeights(dom3d)
---ccw:set_weight_on_subset(1000.0, 3) -- mem_er
---balancer.communicationWeights = ccw
-
-ssp = SideSubsetProtector(dom3d:subset_handler())
-ssp:add_protectable_subset("erm")
-
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -372,11 +345,21 @@ loadBalancer = balancer.CreateLoadBalancer(dom3d)
 -- refining and distributing
 -- manual refinement (need to update interface node location in each step)
 if loadBalancer ~= nil then
-	loadBalancer:enable_vertical_interface_creation(false)
+	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
-		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+		mu = ManifoldUnificator(dom3d)
+		mu:add_protectable_subsets("erm")
+		cdgm = VolumeClusteredDualGraphManager()
+		cdgm:add_unificator(VolumeSiblingUnificator())
+		cdgm:add_unificator(mu)
+		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
-	balancer.Rebalance(dom3d, loadBalancer)
+	balancer.Rebalance(dom, loadBalancer)
+	loadBalancer:estimate_distribution_quality()
+	loadBalancer:print_quality_records()
+	if balancer.partitioner == "parmetis" then
+		print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
+	end
 end
 
 if numRefs > 0 then	
@@ -386,11 +369,6 @@ if numRefs > 0 then
 	end
 end
 
-if loadBalancer ~= nil then
-	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
-	loadBalancer:estimate_distribution_quality()
-	loadBalancer:print_quality_records()
-end
 print(dom3d:domain_info():to_string())
 
 
@@ -420,10 +398,8 @@ approxSpace3d:add_fct("ca_er", "Lagrange", 1)--, innerDomain)
 approxSpace3d:add_fct("clb", "Lagrange", 1)--, outerDomain)
 approxSpace3d:add_fct("ip3", "Lagrange", 1)--, outerDomain)
 
-approxSpace3d:init_levels();
-approxSpace3d:init_surfaces();
-approxSpace3d:init_top_surface();
-approxSpace3d:print_layout_statistic()
+approxSpace3d:init_levels()
+approxSpace3d:init_top_surface()
 approxSpace3d:print_statistic()
 
 OrderCuthillMcKee(approxSpace3d, true);
@@ -607,6 +583,7 @@ if (solverID == "ILU") then
     bcgs_steps = 10000
     ilu = ILU()
     ilu:set_sort(true)
+    ilu:enable_consistent_interfaces(true)
     bcgs_precond = ilu
 elseif (solverID == "GS") then
     bcgs_steps = 10000
@@ -642,17 +619,8 @@ bicgstabSolver:set_convergence_check(convCheck)
 --bicgstabSolver:set_debug(dbgWriter)
 
 --- non-linear solver ---
--- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 1e-17, 1e-10)
---newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-10)
-newtonConvCheck:set_verbose(true)
-newtonConvCheck:set_time_measurement(true)
---newtonConvCheck:set_adaptive(true)
-
--- Newton solver
-newtonSolver = NewtonSolver()
+newtonSolver = LimexNewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
-newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_debug(dbgWriter)
 
 newtonSolver:init(op)
@@ -671,7 +639,7 @@ InterpolateInner(clb_init, u, "clb", 0.0)
 InterpolateInner(ip3_init, u, "ip3", 0.0)
 
 -- timestep in seconds
-dt = dt3dStart
+dt = dt3d
 dtmin = 1e-9
 dtmax = 1e-2
 time = 0.0
@@ -688,14 +656,9 @@ end
 ------------------
 --  LIMEX setup --
 ------------------
-nstages = 2            -- number of stages
-stageNSteps = {1,2,3}  -- number of time steps for each stage
-tol = 0.01             -- allowed relative error ()
-
--- convergence check
-limexConvCheck = ConvCheck(1, 1e-18, 1e-08, true)
-limexConvCheck:set_supress_unsuccessful(true)
-newtonSolver:set_convergence_check(limexConvCheck)
+nstages = 3            -- number of stages
+stageNSteps = {1,2,3,4}  -- number of time steps for each stage
+tol = 1.0             -- allowed relative error (part of reference error norm given to limexEstimator)
 
 limex = LimexTimeIntegrator(nstages)
 for i = 1, nstages do
@@ -708,11 +671,24 @@ limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
 limex:set_increase_factor(2.0)
 
+
 -- GridFunction error estimator (relative norm)
 --errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvaluator = SupErrorEvaluator("ca_cyt", "cyt", 1.0) -- function name, subset names, scale
-limexEstimator = ScaledGridFunctionEstimator()
-limexEstimator:add(errorEvaluator)
+compCaCyt = L2ComponentSpace("ca_cyt", 3) -- function, order
+compCaER = L2ComponentSpace("ca_er", 3)
+compClb = L2ComponentSpace("clb", 3)
+compIP3 = L2ComponentSpace("ip3", 3)
+
+--limexEstimator = ScaledGridFunctionEstimator()
+--limexEstimator:add(errorEvalCa)
+limexEstimator = GridFunctionEstimator()
+limexEstimator:add(compCaCyt)--, 1.0/ca_cyt_init)
+limexEstimator:add(compCaER)--, 1.0/ca_er_init)
+limexEstimator:add(compClb)--, 1.0/clb_init)
+limexEstimator:add(compIP3)--, 1.0/ip3_init)
+local cytVolume = compute_volume_of_subset(approxSpace3d, 0)
+limexEstimator:set_reference_norm(math.sqrt(4*1e-9*1e-9*cytVolume))
+
 limex:add_error_estimator(limexEstimator)
 
 -- for vtk output
