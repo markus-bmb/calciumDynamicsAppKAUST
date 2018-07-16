@@ -169,7 +169,7 @@ end
 -- specify -vtk to generate vtk output
 generateVTKoutput = util.HasParamOption("-vtk")
 
--- specify -vtk to generate vtk output
+-- specify -verbose to display linear solver output
 verbose = util.HasParamOption("-verbose")
 
 ---------------
