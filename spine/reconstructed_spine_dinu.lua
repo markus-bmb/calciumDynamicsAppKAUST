@@ -2,6 +2,7 @@
 --  Example script for simulation on 3d spine model			--
 --                                                          --
 --  Author: Markus Breit                                    --
+--  Date: 2015-11-11                                        --
 --------------------------------------------------------------
 
 -- for profiler output
