@@ -40,7 +40,7 @@ gridName = util.GetParam("-grid", "../grids/modelDendrite1d.ugx")
 dendRadius = util.GetParamNumber("-dendRadius", 0.5)
 erRadius = util.GetParamNumber("-erRadius", 0.158)
 
--- refinements (global and at ERM)
+-- refinements (global)
 numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- which ER mechanisms are to be activated?
@@ -138,11 +138,20 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 IP3Rdensity = 17.3
 RYRdensity = 0.86
 leakERconstant = 3.8e-17
+
 local v_s = 6.5e-27  -- V_S param of SERCA pump
 local k_s = 1.8e-7   -- K_S param of SERCA pump
-SERCAfluxDensity =   IP3Rdensity * 3.7606194166520605e-23      -- j_ip3r
-			       + RYRdensity * 1.1204582669024472e-21       -- j_ryr
-			       + leakERconstant * (ca_er_init-ca_cyt_init) -- j_leak
+local j_ip3r = 3.7606194166520605e-23   -- single channel IP3R flux (mol/s) - to be determined via gdb
+local j_ryr = 1.1201015633466695e-21    -- single channel RyR flux (mol/s) - to be determined via gdb
+				  						-- ryr1: 1.1204582669024472e-21	
+local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
+SERCAfluxDensity = leakERconstant * j_leak
+if withIP3R then 
+	SERCAfluxDensity = SERCAfluxDensity + IP3Rdensity * j_ip3r
+end
+if withRyR then
+	SERCAfluxDensity = SERCAfluxDensity + RYRdensity * j_ryr
+end
 SERCAdensity = SERCAfluxDensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 if (SERCAdensity < 0) then error("SERCA flux density is outward for these density settings!") end
 
@@ -158,7 +167,6 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 
 
 -- firing pattern of the synapse
-synSubset = 1
 caEntryDuration = 0.001
 function synCurrentDensityCa(x, t, si)	
 	-- single spike (~1200 ions)
@@ -349,6 +357,7 @@ discPMLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 discPMLeak:set_radius(dendRadius)
 
 
+-- synaptic activity
 synapseInfluxCa = NeumannBoundary("ca_cyt", "fv1")
 synapseInfluxCa:add("synCurrentDensityCa", "syn", cytVol)
 synapseInfluxIP3 = NeumannBoundary("ip3", "fv1")

@@ -181,7 +181,8 @@ local k_s = 1.8e-7   -- K_S param of SERCA pump
 local j_ip3r = 3.7606194166520605e-23   -- single channel IP3R flux (mol/s) - to be determined via gdb
 local j_ryr = 1.1201015633466695e-21    -- single channel RyR flux (mol/s) - to be determined via gdb
 				  						-- ryr1: 1.1204582669024472e-21	
---[[
+---[[
+-- equilibration using SERCA
 leakERconstant = 3.8e-17
 local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 
@@ -196,7 +197,8 @@ end
 SERCAdensity = SERCAfluxDensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 if (SERCAdensity < 0) then error("SERCA flux density is outward for these density settings!") end
 --]]
----[[
+--[[
+-- equilibration using leakage
 SERCAdensity = 1973.0
 SERCAflux = v_s / (k_s / ca_cyt_init + 1.0) / ca_er_init
 

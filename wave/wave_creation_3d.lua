@@ -37,6 +37,18 @@ gridName = util.GetParam("-grid", "../grids/modelDendrite3d.ugx")
 -- refinements (global)
 numRefs = util.GetParamNumber("-numRefs", 0)
 
+-- which ER mechanisms are to be activated?
+setting = util.GetParam("-setting", "all")
+setting = string.lower(setting)
+validSettings = {}
+validSettings["all"] = 0;
+validSettings["none"] = 0;
+validSettings["ip3r"] = 0;
+validSettings["ryr"] = 0;
+if (validSettings[setting] == nil) then
+    error("Unknown setting " .. setting)
+end
+
 -- choice of solver setup
 solverID = util.GetParam("-solver", "GMG")
 solverID = string.upper(solverID)
@@ -47,6 +59,9 @@ validSolverIDs["ILU"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
+
+-- error tolerance for Limex iteration
+tol = util.GetParamNumber("-tol", 0.01)
 
 -- specify "-verbose" to output linear solver convergence
 verbose = util.HasParamOption("-verbose")
@@ -67,6 +82,26 @@ pstep = util.GetParamNumber("-pstep", dt, "plotting interval")
 ------------------------------------------------------
 --  problem constants  -------------------------------
 ------------------------------------------------------
+-- setting-dependent variables
+withIP3R = true
+withRyR = true
+withSERCAandLeak = true
+
+if setting == "none" then 
+	withIP3R = false
+	withRyR = false
+	withSERCAandLeak = false
+end
+
+if setting == "ip3r" then
+	withRyR = false
+end
+
+if setting == "ryr" then
+	withIP3R = false
+end
+
+
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
 totalClb = 4*40.0e-6
@@ -97,11 +132,20 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 IP3Rdensity = 17.3
 RYRdensity = 0.86
 leakERconstant = 3.8e-17
+
 local v_s = 6.5e-27  -- V_S param of SERCA pump
 local k_s = 1.8e-7   -- K_S param of SERCA pump
-SERCAfluxDensity =   IP3Rdensity * 3.7606194166520605e-23      -- j_ip3r
-			       + RYRdensity * 1.1204582669024472e-21       -- j_ryr
-			       + leakERconstant * (ca_er_init-ca_cyt_init) -- j_leak
+local j_ip3r = 3.7606194166520605e-23   -- single channel IP3R flux (mol/s) - to be determined via gdb
+local j_ryr = 1.1201015633466695e-21    -- single channel RyR flux (mol/s) - to be determined via gdb
+				  						-- ryr1: 1.1204582669024472e-21	
+local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
+SERCAfluxDensity = leakERconstant * j_leak
+if withIP3R then 
+	SERCAfluxDensity = SERCAfluxDensity + IP3Rdensity * j_ip3r
+end
+if withRyR then
+	SERCAfluxDensity = SERCAfluxDensity + RYRdensity * j_ryr
+end
 SERCAdensity = SERCAfluxDensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 if (SERCAdensity < 0) then error("SERCA flux density is outward for these density settings!") end
 
@@ -117,12 +161,11 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 
 
 -- firing pattern of the synapse
-synSubset = 4
 caEntryDuration = 0.001
 function synCurrentDensityCa(x, y, z, t, si)	
 	-- single spike (~1200 ions)
 	local influx
-	if (si == synSubset and t <= caEntryDuration)
+	if t <= caEntryDuration
 	then influx = 2.5e-3 * (1.0 - t/caEntryDuration)
 	else influx = 0.0
 	end
@@ -134,7 +177,7 @@ ip3EntryDelay = 0.000
 ip3EntryDuration = 0.2
 function synCurrentDensityIP3(x, y, z, t, si)
 	local influx
-	if (si == synSubset and t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration)
+	if t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration
 	then influx = 7.5e-5 * (1.0 - t/ip3EntryDuration)
 	else influx = 0.0
 	end
@@ -163,9 +206,21 @@ loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
+		--[[
+		-- old Parmetis implementation
 		ssp = SideSubsetProtector(dom:subset_handler())
 		ssp:add_protectable_subset("erm")
 		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+		--]]
+		---[[
+		-- new Parmetis implementation
+		mu = ManifoldUnificator(dom)
+		mu:add_protectable_subsets("erm")
+		cdgm = VolumeClusteredDualGraphManager()
+		cdgm:add_unificator(VolumeSiblingUnificator())
+		cdgm:add_unificator(mu)
+		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+		--]]
 	end
 	balancer.Rebalance(dom, loadBalancer)
 	loadBalancer:estimate_distribution_quality()
@@ -205,14 +260,15 @@ approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("o2", "Lagrange", 1, erMem)
+approxSpace:add_fct("c1", "Lagrange", 1, erMem)
+approxSpace:add_fct("c2", "Lagrange", 1, erMem)
 
 approxSpace:init_levels()
 approxSpace:init_surfaces()
 approxSpace:init_top_surface()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
-
---OrderCuthillMcKee(approxSpace, true)
 
 
 --------------------------
@@ -250,9 +306,8 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
---ryr = RyR({"ca_cyt", "ca_er"})
-ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
-ryr:set_scale_inputs({1e3,1e3})
+ryr = RyRImplicit({"ca_cyt", "ca_er", "o2", "c1", "c2"}, erMemVec)
+ryr:set_scale_inputs({1e3, 1e3, 1.0, 1.0, 1.0})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 serca = SERCA({"ca_cyt", "ca_er"})
@@ -292,27 +347,6 @@ leakPM:set_constant(0, 1.0)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
---[[
-vdcc = VDCC_BG_CN({"ca_cyt", ""}, plMem_vec, approxSpace1d, approxSpace, "v")
-vdcc:set_domain_disc_1d(domDisc1d)
-vdcc:set_cable_disc(CE)
-vdcc:set_coordinate_scale_factor_3d_to_1d(1e-6)
-if withIons then
-	vdcc:set_initial_values({v_eq, k_in, na_in, ca_in})
-else
-	vdcc:set_initial_values({v_eq})
-end
-vdcc:set_time_steps_for_simulation_and_potential_update(dt1d, dt1d)
-vdcc:set_solver_output_verbose(verbose1d)
-if generateVTKoutput then
-	vdcc:set_vtk_output(outDir.."vtk/solution1d", pstep)
-end
-vdcc:set_constant(1, 1.5)
-vdcc:set_scale_inputs({1e3,1.0})
-vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-vdcc:set_channel_type_L() --default, but to be sure
-vdcc:init(0.0)
---]]
 
 discPMCA = MembraneTransportFV1(plMem, pmca)
 discPMCA:set_density_function(pmcaDensity)
@@ -323,11 +357,6 @@ discNCX:set_density_function(ncxDensity)
 discPMLeak = MembraneTransportFV1(plMem, leakPM)
 discPMLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 
---[[
-discVDCC = MembraneTransportFV1(plMem, vdcc)
-discVDCC:set_density_function(vdccDensity)
-discVDCC:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
---]]
 
 -- synaptic activity
 synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
@@ -335,14 +364,6 @@ synapseInfluxCa:set_flux_function("synCurrentDensityCa")
 synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
 synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
 
---[[ -- only for blocked algebra
--- Dirichlet for superfluous dofs
-uselessDofDiri = DirichletBoundary()
-uselessDofDiri:add(ca_cyt_init, "ca_cyt", "er")
-uselessDofDiri:add(ip3_init, "ip3", "er")
-uselessDofDiri:add(clb_init, "clb", "er")
-uselessDofDiri:add(ca_er_init, "ca_er", "cyt, pm")
---]]
 
 -- domain discretization --
 domDisc = DomainDiscretization(approxSpace)
@@ -354,20 +375,27 @@ domDisc:add(diffIP3)
 
 domDisc:add(discBuffer)
 
-domDisc:add(discIP3R)
-domDisc:add(discRyR)
-domDisc:add(discSERCA)
-domDisc:add(discERLeak)
+
+if withIP3R then
+	domDisc:add(discIP3R)
+end
+if withRyR then
+	domDisc:add(discRyR)
+	domDisc:add(ryr) -- also add ryr as elem disc (for state variables)
+end
+if withSERCAandLeak then
+	domDisc:add(discSERCA)
+	domDisc:add(discERLeak)
+end
 
 domDisc:add(discPMCA)
 domDisc:add(discNCX)
 domDisc:add(discPMLeak)
---domDisc:add(discVDCC)
 
 domDisc:add(synapseInfluxCa)
-domDisc:add(synapseInfluxIP3)
-
---domDisc:add(uselessDofDiri)
+if withIP3R then
+	domDisc:add(synapseInfluxIP3)
+end
 
 
 -- setup time discretization --
@@ -440,9 +468,9 @@ newtonConvCheck:set_time_measurement(true)
 --newtonConvCheck:set_adaptive(true)
 
 -- Newton solver
-newtonSolver = NewtonSolver()
+newtonSolver = LimexNewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
-newtonSolver:set_convergence_check(newtonConvCheck)
+--newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_debug(dbgWriter)
 
 newtonSolver:init(op)
@@ -459,6 +487,7 @@ InterpolateInner(ca_cyt_init, u, "ca_cyt", 0.0)
 InterpolateInner(ca_er_init, u, "ca_er", 0.0)
 InterpolateInner(clb_init, u, "clb", 0.0)
 InterpolateInner(ip3_init, u, "ip3", 0.0)
+ryr:calculate_steady_state(u)
 
 -- timestep in seconds
 dtmin = 1e-9
@@ -476,14 +505,8 @@ end
 ------------------
 --  LIMEX setup --
 ------------------
-nstages = 2            -- number of stages
-stageNSteps = {1,2,3}  -- number of time steps for each stage
-tol = 0.01             -- allowed relative error ()
-
--- convergence check
-limexConvCheck = ConvCheck(1, 1e-18, 1e-08, true)
-limexConvCheck:set_supress_unsuccessful(true)
-newtonSolver:set_convergence_check(limexConvCheck)
+nstages = 2              -- number of stages
+stageNSteps = {1,2,3,4}  -- number of time steps for each stage
 
 limex = LimexTimeIntegrator(nstages)
 for i = 1, nstages do
@@ -500,9 +523,11 @@ limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
 --errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvaluator = SupErrorEvaluator("ca_cyt", "cyt", 1.0) -- function name, subset names, scale
+errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
+errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
 limexEstimator = ScaledGridFunctionEstimator()
-limexEstimator:add(errorEvaluator)
+limexEstimator:add(errorEvalCa)
+limexEstimator:add(errorEvalC1)
 limex:add_error_estimator(limexEstimator)
 
 -- for vtk output
@@ -511,11 +536,6 @@ if (generateVTKoutput) then
 	limex:attach_observer(vtkObserver)
 end
 
-
---bicgstabSolver:set_debug(dbgWriter)
---newtonSolver:set_debug(dbgWriter)
---gmg:set_debug(dbgWriter)
---convCheck:set_maximum_steps(1)
 
 -- solve problem
 limex:apply(u, endTime, u, time)
