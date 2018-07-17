@@ -182,9 +182,9 @@ function synCurrentDensityIP3(x, t, si)
 	else influx = 0.0
 	end
 	
-	-- scale with constant radius 0.5 and length 0.5 to keep influx constant on all geometries
+	-- scale with 2*pi*dendrite radius and length 0.5 to keep influx constant on all geometries
     -- but only half of the amount as it is added twice (once to the left, once to the right)!
-    return true, -0.25*math.pi*influx
+    return true, -0.5*dendRadius*math.pi*influx
 end
 
 
