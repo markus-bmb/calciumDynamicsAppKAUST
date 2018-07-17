@@ -25,6 +25,9 @@ AssertPluginsLoaded({"neuro_collection", "Limex", "Parmetis"})
 EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 --SetDebugLevel(debugID.LUACompiler, 0) 
 
+-- init with dimension and algebra
+InitUG(2, AlgebraType("CPU", 1))
+
 
 -------------------------------------
 -- parse command line parameters  ---
@@ -65,9 +68,6 @@ ryrDens = util.GetParamNumber("-ryrDens", 0.86)
 -- whether to scale synaptic influx with dendritic radius
 constInflux = util.HasParamOption("-constInflux")
 
--- choice of algebra
-useBlockAlgebra = util.HasParamOption("-block")
-
 -- choice of solver setup
 solverID = util.GetParam("-solver", "GMG")
 solverID = string.upper(solverID)
@@ -97,14 +97,6 @@ outDir = outDir .. "/"
 generateVTKoutput = util.HasParamOption("-vtk")
 pstep = util.GetParamNumber("-pstep", dt, "plotting interval")
 
-
-
--- init with dimension and algebra
-if useBlockAlgebra then
-	InitUG(2, AlgebraType("CPU", 4))
-else
-	InitUG(2, AlgebraType("CPU", 1))
-end
 
 -----------------------
 -- geometry creation --
@@ -270,32 +262,19 @@ erMemVec = {"erm"}
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem .. ", bnd_cyt"
 innerDomain = erVol .. ", " .. erMem .. ", bnd_er"
 
-if useBlockAlgebra then
-	approxSpace:add_fct("ca_cyt", "Lagrange", 1)
-	approxSpace:add_fct("ca_er", "Lagrange", 1)
-	approxSpace:add_fct("clb", "Lagrange", 1)
-	approxSpace:add_fct("ip3", "Lagrange", 1)
-	approxSpace:add_fct("o2", "Lagrange", 1)
-	approxSpace:add_fct("c1", "Lagrange", 1)
-	approxSpace:add_fct("c2", "Lagrange", 1)
-else
-	approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
-	approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
-	approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
-	approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
-	approxSpace:add_fct("o2", "Lagrange", 1, erMem)
-	approxSpace:add_fct("c1", "Lagrange", 1, erMem)
-	approxSpace:add_fct("c2", "Lagrange", 1, erMem)
-end
+approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
+approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("o2", "Lagrange", 1, erMem)
+approxSpace:add_fct("c1", "Lagrange", 1, erMem)
+approxSpace:add_fct("c2", "Lagrange", 1, erMem)
+
 approxSpace:init_levels()
 approxSpace:init_surfaces()
 approxSpace:init_top_surface()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
-
-if useBlockAlgebra then
-	OrderCuthillMcKee(approxSpace, true)
-end
 
 
 -- ERM refinements
@@ -537,17 +516,6 @@ domDisc:add(discPMLeak)
 domDisc:add(synapseInfluxCa)
 if withIP3R then
 	domDisc:add(synapseInfluxIP3)
-end
-
--- Dirichlet for superfluous dofs
-if useBlockAlgebra then
-	uselessDofDiri = DirichletBoundary()
-	uselessDofDiri:add(ca_cyt_init, "ca_cyt", "er, bnd_er")
-	uselessDofDiri:add(ip3_init, "ip3", "er, bnd_er")
-	uselessDofDiri:add(clb_init, "clb", "er, bnd_er")
-	uselessDofDiri:add(ca_er_init, "ca_er", "cyt, pm, syn, bnd_cyt")
-
-	domDisc:add(uselessDofDiri)
 end
 
 -- constraints for adaptivity
