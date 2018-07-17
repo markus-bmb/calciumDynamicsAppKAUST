@@ -206,13 +206,13 @@ loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
-		--[[
+		---[[
 		-- old Parmetis implementation
 		ssp = SideSubsetProtector(dom:subset_handler())
 		ssp:add_protectable_subset("erm")
 		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
 		--]]
-		---[[
+		--[[
 		-- new Parmetis implementation
 		mu = ManifoldUnificator(dom)
 		mu:add_protectable_subsets("erm")
