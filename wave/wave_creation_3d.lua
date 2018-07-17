@@ -239,7 +239,7 @@ if numRefs > 0 then
 end
 
 print(dom:domain_info():to_string())
-SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
+--SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
 --SaveParallelGridLayout(dom:grid(), outDir .. "grid/parallel_grid_layout_p"..ProcRank()..".ugx", 1.0)
 
 
@@ -470,7 +470,6 @@ newtonConvCheck:set_time_measurement(true)
 -- Newton solver
 newtonSolver = LimexNewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
---newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_debug(dbgWriter)
 
 newtonSolver:init(op)
@@ -518,7 +517,8 @@ limex:set_time_step(dt)
 limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
 limex:set_increase_factor(2.0)
-limex:set_stepsize_greedy_order_factor(1)
+limex:set_reduction_factor(0.1)
+limex:set_stepsize_greedy_order_factor(0.5)
 limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
