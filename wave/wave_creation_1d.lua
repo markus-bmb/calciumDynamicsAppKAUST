@@ -457,18 +457,9 @@ bicgstabSolver:set_preconditioner(bcgs_precond)
 bicgstabSolver:set_convergence_check(convCheck)
 --bicgstabSolver:set_debug(dbgWriter)
 
---- non-linear solver ---
--- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-17, 1e-10)
---newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-10)
-newtonConvCheck:set_verbose(true)
-newtonConvCheck:set_time_measurement(true)
-newtonConvCheck:set_adaptive(true)
-
 -- Newton solver
 newtonSolver = LimexNewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
---newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_debug(dbgWriter)
 
 newtonSolver:init(op)
@@ -494,7 +485,7 @@ time = 0.0
 step = 0
 
 -- initial vtk output
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
 	out:print(outDir .. "vtk/solution", u, step, time)
 end

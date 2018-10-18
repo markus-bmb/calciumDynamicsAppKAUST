@@ -304,9 +304,12 @@ loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
-		ssp = SideSubsetProtector(dom:subset_handler())
-		ssp:add_protectable_subset("erm")
-		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+		mu = ManifoldUnificator(dom)
+		mu:add_protectable_subsets("erm")
+		cdgm = ClusteredDualGraphManager()
+		cdgm:add_unificator(SiblingUnificator())
+		cdgm:add_unificator(mu)
+		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
 	balancer.Rebalance(dom, loadBalancer)
 	loadBalancer:estimate_distribution_quality()

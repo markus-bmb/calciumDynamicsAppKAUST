@@ -237,8 +237,8 @@ if loadBalancer ~= nil then
 	if balancer.partitioner == "parmetis" then
 		mu = ManifoldUnificator(dom)
 		mu:add_protectable_subsets("mem_er, mem_app, syn")
-		cdgm = VolumeClusteredDualGraphManager()
-		cdgm:add_unificator(VolumeSiblingUnificator())
+		cdgm = ClusteredDualGraphManager()
+		cdgm:add_unificator(SiblingUnificator())
 		cdgm:add_unificator(mu)
 		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end

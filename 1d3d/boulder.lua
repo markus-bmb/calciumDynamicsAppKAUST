@@ -17,7 +17,7 @@ ug_load_script("util/load_balancing_util.lua")
 
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 
 -- choice of grid and refinement level
@@ -356,9 +356,6 @@ balancer.partitioner = "parmetis"
 --ccw:set_weight_on_subset(1000.0, 3) -- mem_er
 --balancer.communicationWeights = ccw
 
-ssp = SideSubsetProtector(dom3d:subset_handler())
-ssp:add_protectable_subset("erm")
-
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -375,7 +372,12 @@ loadBalancer = balancer.CreateLoadBalancer(dom3d)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(false)
 	if balancer.partitioner == "parmetis" then
-		balancer.defaultPartitioner:set_dual_graph_manager(ssp)
+		mu = ManifoldUnificator(dom3d)
+		mu:add_protectable_subsets("erm")
+		cdgm = ClusteredDualGraphManager()
+		cdgm:add_unificator(SiblingUnificator())
+		cdgm:add_unificator(mu)
+		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
 	balancer.Rebalance(dom3d, loadBalancer)
 end

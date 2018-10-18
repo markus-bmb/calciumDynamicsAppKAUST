@@ -349,8 +349,8 @@ if loadBalancer ~= nil then
 	if balancer.partitioner == "parmetis" then
 		mu = ManifoldUnificator(dom3d)
 		mu:add_protectable_subsets("erm")
-		cdgm = VolumeClusteredDualGraphManager()
-		cdgm:add_unificator(VolumeSiblingUnificator())
+		cdgm = ClusteredDualGraphManager()
+		cdgm:add_unificator(SiblingUnificator())
 		cdgm:add_unificator(mu)
 		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end

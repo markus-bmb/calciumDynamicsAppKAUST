@@ -81,7 +81,8 @@ if (validSolverIDs[solverID] == nil) then
 end
 
 -- error tolerance for Limex iteration
-tol = util.GetParamNumber("-tol", 0.01)
+toleratedError = util.GetParamNumber("-tol", 0.01)
+nstages = util.GetParamNumber("-nst", 3)
 
 -- specify "-verbose" to output linear solver convergence
 verbose = util.HasParamOption("-verbose")
@@ -336,8 +337,8 @@ if loadBalancer ~= nil then
 	if balancer.partitioner == "parmetis" then
 		mu = ManifoldUnificator(dom)
 		mu:add_protectable_subsets("erm")
-		cdgm = FaceClusteredDualGraphManager()
-		cdgm:add_unificator(FaceSiblingUnificator())
+		cdgm = ClusteredDualGraphManager()
+		cdgm:add_unificator(SiblingUnificator())
 		cdgm:add_unificator(mu)
 		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
@@ -684,15 +685,15 @@ end
 ------------------
 --  LIMEX setup --
 ------------------
-nstages = 3              -- number of stages
-stageNSteps = {1,2,3,4}  -- number of time steps for each stage
+stageNSteps = {}    -- number of time steps for each stage
+for i = 1, nstages do stageNSteps[i] = i end
 
 limex = LimexTimeIntegrator(nstages)
 for i = 1, nstages do
 	limex:add_stage(stageNSteps[i], newtonSolver, domDisc)
 end
 
-limex:set_tolerance(tol)
+limex:set_tolerance(toleratedError)
 limex:set_time_step(dt)
 limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
@@ -702,12 +703,21 @@ limex:set_stepsize_greedy_order_factor(1)
 limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
---errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
-errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
+errorEvalCaCyt = H1ComponentSpace("ca_cyt", "cyt", 3)  -- fct names, subset names, order
+errorEvalCaER = H1ComponentSpace("ca_er", "er", 3)
+errorEvalClb = H1ComponentSpace("clb", "cyt", 3)
+errorEvalO2 = L2ComponentSpace("o2", 3, 1.0, "erm")  -- fct names, order, weight, subset names
+errorEvalC1 = L2ComponentSpace("c1", 3, 1.0, "erm")
+errorEvalC2 = L2ComponentSpace("c2", 3, 1.0, "erm")
+--errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
+--errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
 limexEstimator = ScaledGridFunctionEstimator()
-limexEstimator:add(errorEvalCa)
-limexEstimator:add(errorEvalC1)
+limexEstimator:add(errorEvalCaCyt)
+limexEstimator:add(errorEvalCaER)
+--limexEstimator:add(errorEvalClb)
+--limexEstimator:add(errorEvalO2)
+--limexEstimator:add(errorEvalC1)
+--limexEstimator:add(errorEvalC2)
 limex:add_error_estimator(limexEstimator)
 
 -- for vtk output
@@ -737,6 +747,9 @@ lastMeasPt = -1
 function measWaveActivity(step, time, dt)
 	curSol = measObserver:get_current_solution()
 
+	-- measure free Ca in dendrite
+	take_measurement(curSol, time, "cyt", "ca_cyt", outDir.."meas/meanCaCyt.dat")
+	
 	-- measure concentration at right end
 	local measConc = take_measurement(curSol, time, "meas", "ca_cyt", outDir.."meas/caAtRightEnd_erRad"..erRadius.."_ryrDens"..ryrDens)
 	if measConc > 4*ca_cyt_init then
@@ -777,6 +790,8 @@ function measWaveActivity(step, time, dt)
 		limex:interrupt()
 	end
 	
+	print("Current (real) time: " .. time .. ",   last dt: " .. dt)
+		
 	return 0.0
 end
 
