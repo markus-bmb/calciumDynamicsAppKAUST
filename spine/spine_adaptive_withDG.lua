@@ -11,26 +11,6 @@
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
-
--- save this script to whereever it is executed
--- (esp. useful for batch jobs)
-function save_script()
-	if ProcRank() == 0 then
-		local fileNameWithPath = (debug.getinfo(2, "S")).source:sub(2)
-		local fileName = string.match(fileNameWithPath, "([^\\/]-%.?[^%.\\/]*)$")
-		
-		local infile = io.open(fileNameWithPath, "r")
-		local instr = infile:read("*a")
-		infile:close()
-		
-		local outfile = io.open(fileName, "w")
-		outfile:write(instr)
-		outfile:close()
-	end
-end
-save_script()
-
-
 -- dimension
 dim = 3
 
