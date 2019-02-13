@@ -15,8 +15,17 @@
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
 
+
+-- discrete RyR mode?
+discreteRyR = util.HasParamOption("-discreteRyR")
+
+
 -- current working directory
-simFile = FindFileInStandardPaths("calciumDynamics_app/wave/wave_exam.lua")
+if discreteRyR then
+	simFile = FindFileInStandardPaths("calciumDynamics_app/wave/wave_exam_discreteRyR.lua")
+else
+	simFile = FindFileInStandardPaths("calciumDynamics_app/wave/wave_exam.lua")
+end
 
 -- choice of bisection parameter
 bisecParam = util.GetParam("-bisec", "erRad")

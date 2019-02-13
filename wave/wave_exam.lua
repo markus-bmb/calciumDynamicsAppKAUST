@@ -21,7 +21,7 @@ ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 ug_load_script("plugins/Limex/limex_util.lua")
 
-AssertPluginsLoaded({"neuro_collection", "Limex", "Parmetis"})
+AssertPluginsLoaded({"calciumDynamics", "neuro_collection", "Limex", "Parmetis"})
 
 EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 --SetDebugLevel(debugID.LUACompiler, 0) 
@@ -38,7 +38,6 @@ gridName = util.GetParam("-grid", "modelDendrite.ugx")
 dendLength = util.GetParamNumber("-dendLength", 50.0)
 dendRadius = util.GetParamNumber("-dendRadius", dendRadius or 0.5)
 erRadius = util.GetParamNumber("-erRadius", erRadius or 0.158)
-synArea = util.GetParamNumber("-synArea", math.pi*0.5)
 nSeg = util.GetParamNumber("-nSeg", 96)
 
 -- refinements (global and at ERM)
@@ -46,7 +45,7 @@ numGlobRefs = util.GetParamNumber("-numGlobRefs", 0)
 numERMRefs = util.GetParamNumber("-numERMRefs", 0)
 
 -- which ER mechanisms are to be activated?
-setting = util.GetParam("-setting", "all")
+setting = util.GetParam("-setting", "ryr")
 setting = string.lower(setting)
 validSettings = {}
 validSettings["all"] = 0;
@@ -103,7 +102,7 @@ pstep = util.GetParamNumber("-pstep", dt, "plotting interval")
 
 -- init with dimension and algebra
 if useBlockAlgebra then
-	InitUG(2, AlgebraType("CPU", 4))
+	InitUG(2, AlgebraType("CPU", 7))
 else
 	InitUG(2, AlgebraType("CPU", 1))
 end
@@ -116,7 +115,6 @@ if ProcRank() == 0 then
 	gen:set_dendrite_length(dendLength)
 	gen:set_dendrite_radius(dendRadius)
 	gen:set_er_radius(erRadius)
-	gen:set_synapse_area(synArea)
 	gen:set_num_segments(nSeg)
 	
 	gridName = outDir .. "grid/" .. gridName
@@ -229,14 +227,12 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 
 
 -- activation pattern
-synSubset = 4
 caEntryDuration = 0.001
 function synCurrentDensityCa(z, r, t, si)
 	-- single spike (~1200 ions)
-	local influx
-	if (si == synSubset and t <= caEntryDuration)
-	then influx = 2.5e-3 * (1.0 - t/caEntryDuration)
-	else influx = 0.0
+	local influx = 0.0
+	if t <= caEntryDuration	then
+		influx = 2.5e-3 * (1.0 - t/caEntryDuration)
 	end
 	
     return 2.0*math.pi*r * influx
@@ -245,10 +241,9 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 0.2
 function synCurrentDensityIP3(z, r, t, si)
-	local influx
-	if (si == synSubset and t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration)
-	then influx = 7.5e-5 * (1.0 - t/ip3EntryDuration)
-	else influx = 0.0
+	local influx = 0.0
+	if t > ip3EntryDelay and t <= ip3EntryDelay+ip3EntryDuration then
+		influx = 7.5e-5 * (1.0 - t/ip3EntryDuration)
 	end
 	
     return 2.0*math.pi*r * influx
@@ -279,18 +274,26 @@ if useBlockAlgebra then
 	approxSpace:add_fct("ca_cyt", "Lagrange", 1)
 	approxSpace:add_fct("ca_er", "Lagrange", 1)
 	approxSpace:add_fct("clb", "Lagrange", 1)
-	approxSpace:add_fct("ip3", "Lagrange", 1)
-	approxSpace:add_fct("o2", "Lagrange", 1)
-	approxSpace:add_fct("c1", "Lagrange", 1)
-	approxSpace:add_fct("c2", "Lagrange", 1)
+	if withIP3R then
+		approxSpace:add_fct("ip3", "Lagrange", 1)
+	end
+	if withRyR then
+		approxSpace:add_fct("o2", "Lagrange", 1)
+		approxSpace:add_fct("c1", "Lagrange", 1)
+		approxSpace:add_fct("c2", "Lagrange", 1)
+	end
 else
 	approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 	approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 	approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
-	approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
-	approxSpace:add_fct("o2", "Lagrange", 1, erMem)
-	approxSpace:add_fct("c1", "Lagrange", 1, erMem)
-	approxSpace:add_fct("c2", "Lagrange", 1, erMem)
+	if withIP3R then
+		approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
+	end
+	if withRyR then
+		approxSpace:add_fct("o2", "Lagrange", 1, erMem)
+		approxSpace:add_fct("c1", "Lagrange", 1, erMem)
+		approxSpace:add_fct("c2", "Lagrange", 1, erMem)
+	end
 end
 approxSpace:init_levels()
 approxSpace:init_surfaces()
@@ -304,8 +307,8 @@ end
 
 
 -- ERM refinements
-strat = SurfaceMarking(2.0, 7)
-strat:add_surface(3,0)	-- erm / outer
+strat = SurfaceMarking(dom)
+strat:add_surface("erm", "cyt")
 
 refiner = HangingNodeDomainRefiner(dom)
 
@@ -335,10 +338,13 @@ loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
 	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
+		au = AnisotropyUnificator(dom)
+		au:set_threshold_ratio(0.1)
 		mu = ManifoldUnificator(dom)
 		mu:add_protectable_subsets("erm")
 		cdgm = ClusteredDualGraphManager()
 		cdgm:add_unificator(SiblingUnificator())
+		cdgm:add_unificator(au)
 		cdgm:add_unificator(mu)
 		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
@@ -409,12 +415,13 @@ diffClb = ConvectionDiffusion("clb", cytVol, "fv1")
 diffClb:set_mass_scale("rotSym_scale")
 diffClb:set_diffusion("scaled_diff_clb")
 
-diffIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
-diffIP3:set_mass_scale("rotSym_scale")
-diffIP3:set_diffusion("scaled_diff_ip3")
-diffIP3:set_reaction_rate("scaled_reactionRate_ip3")
-diffIP3:set_reaction("scaled_reactionTerm_ip3")
-
+if withIP3R then
+	diffIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
+	diffIP3:set_mass_scale("rotSym_scale")
+	diffIP3:set_diffusion("scaled_diff_ip3")
+	diffIP3:set_reaction_rate("scaled_reactionRate_ip3")
+	diffIP3:set_reaction("scaled_reactionTerm_ip3")
+end
 
 -- buffering --
 discBuffer = BufferFV1(cytVol) -- where buffering occurs
@@ -428,44 +435,43 @@ discBuffer:add_reaction(
 
 
 -- er membrane transport systems
-ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
-ip3r:set_scale_inputs({1e3,1e3,1e3})
-ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+if withIP3R then
+	ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
+	ip3r:set_scale_inputs({1e3,1e3,1e3})
+	ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
---[[
---ryr = RyR({"ca_cyt", "ca_er"})
-ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
-ryr:set_scale_inputs({1e3,1e3})
-ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
---]]
-ryr = RyRImplicit({"ca_cyt", "ca_er", "o2", "c1", "c2"}, erMemVec)
-ryr:set_scale_inputs({1e3, 1e3, 1.0, 1.0, 1.0})
-ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+	discIP3R = MembraneTransportFV1(erMem, ip3r)
+	discIP3R:set_density_function(IP3Rdensity)
+	discIP3R:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
+end
 
-serca = SERCA({"ca_cyt", "ca_er"})
-serca:set_scale_inputs({1e3,1e3})
-serca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+if withRyR then
+	ryr = RyRImplicit({"ca_cyt", "ca_er", "o2", "c1", "c2"}, erMemVec)
+	ryr:set_scale_inputs({1e3, 1e3, 1.0, 1.0, 1.0})
+	ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
-leakER = Leak({"ca_er", "ca_cyt"})
-leakER:set_scale_inputs({1e3,1e3})
-leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
+	discRyR = MembraneTransportFV1(erMem, ryr)
+	discRyR:set_density_function(RYRdensity)
+	discRyR:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
+end
 
+if withSERCAandLeak then
+	serca = SERCA({"ca_cyt", "ca_er"})
+	serca:set_scale_inputs({1e3,1e3})
+	serca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+	
+	leakER = Leak({"ca_er", "ca_cyt"})
+	leakER:set_scale_inputs({1e3,1e3})
+	leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
-discIP3R = MembraneTransportFV1(erMem, ip3r)
-discIP3R:set_density_function(IP3Rdensity)
-discIP3R:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
-
-discRyR = MembraneTransportFV1(erMem, ryr)
-discRyR:set_density_function(RYRdensity)
-discRyR:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
-
-discSERCA = MembraneTransportFV1(erMem, serca)
-discSERCA:set_density_function(SERCAdensity)
-discSERCA:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
-
-discERLeak = MembraneTransportFV1(erMem, leakER)
-discERLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
-discERLeak:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
+	discSERCA = MembraneTransportFV1(erMem, serca)
+	discSERCA:set_density_function(SERCAdensity)
+	discSERCA:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
+	
+	discERLeak = MembraneTransportFV1(erMem, leakER)
+	discERLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
+	discERLeak:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation in 2d
+end
 
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
@@ -526,8 +532,10 @@ discVDCC:set_flux_scale("rotSym_scale")  -- to achieve 3d rot. symm. simulation 
 -- synaptic activity
 synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "act")
 synapseInfluxCa:set_flux_function("synCurrentDensityCa")
-synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "act")
-synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
+if withIP3R then
+	synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "act")
+	synapseInfluxIP3:set_flux_function("synCurrentDensityIP3")
+end
 
 -- domain discretization --
 domDisc = DomainDiscretization(approxSpace)
@@ -535,12 +543,13 @@ domDisc = DomainDiscretization(approxSpace)
 domDisc:add(diffCaCyt)
 domDisc:add(diffCaER)
 domDisc:add(diffClb)
-domDisc:add(diffIP3)
 
 domDisc:add(discBuffer)
 
 if withIP3R then
+	domDisc:add(diffIP3)
 	domDisc:add(discIP3R)
+	domDisc:add(synapseInfluxIP3)
 end
 if withRyR then
 	domDisc:add(discRyR)
@@ -554,21 +563,24 @@ end
 domDisc:add(discPMCA)
 domDisc:add(discNCX)
 domDisc:add(discPMLeak)
---domDisc:add(discVDCC)
 
 domDisc:add(synapseInfluxCa)
-if withIP3R then
-	domDisc:add(synapseInfluxIP3)
-end
+
 
 -- Dirichlet for superfluous dofs
 if useBlockAlgebra then
 	uselessDofDiri = DirichletBoundary()
 	uselessDofDiri:add(ca_cyt_init, "ca_cyt", "er")
-	uselessDofDiri:add(ip3_init, "ip3", "er")
+	if withIP3R then
+		uselessDofDiri:add(ip3_init, "ip3", "er")
+	end
 	uselessDofDiri:add(clb_init, "clb", "er")
 	uselessDofDiri:add(ca_er_init, "ca_er", "cyt, pm, act, meas")
-
+	if withRyR then
+		uselessDofDiri:add(0, "o2", "cyt, er, pm, act, meas")
+		uselessDofDiri:add(0, "c1", "cyt, er, pm, act, meas")
+		uselessDofDiri:add(0, "c2", "cyt, er, pm, act, meas")
+	end
 	domDisc:add(uselessDofDiri)
 end
 
@@ -603,7 +615,7 @@ convCheck:set_reduction(1e-8)
 convCheck:set_verbose(verbose)
 
 if (solverID == "ILU") then
-    bcgs_steps = 1000
+    bcgs_steps = 10000
     ilu = ILU()
     ilu:set_sort(true)
     bcgs_precond = ilu
@@ -639,14 +651,6 @@ bicgstabSolver:set_preconditioner(bcgs_precond)
 bicgstabSolver:set_convergence_check(convCheck)
 --bicgstabSolver:set_debug(dbgWriter)
 
---- non-linear solver ---
--- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-17, 1e-08)
---newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-10)
-newtonConvCheck:set_verbose(true)
-newtonConvCheck:set_time_measurement(true)
-newtonConvCheck:set_adaptive(true)
-
 -- Newton solver
 newtonSolver = LimexNewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
@@ -666,8 +670,12 @@ u = GridFunction(approxSpace)
 InterpolateInner(ca_cyt_init, u, "ca_cyt", 0.0)
 InterpolateInner(ca_er_init, u, "ca_er", 0.0)
 InterpolateInner(clb_init, u, "clb", 0.0)
-InterpolateInner(ip3_init, u, "ip3", 0.0)
-ryr:calculate_steady_state(u)
+if withIP3R then
+	InterpolateInner(ip3_init, u, "ip3", 0.0)
+end
+if withRyR then
+	ryr:calculate_steady_state(u)
+end
 
 -- timestep in seconds
 dtmin = 1e-9
@@ -676,7 +684,7 @@ time = 0.0
 step = 0
 
 -- initial vtk output
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
 	out:print(outDir .. "vtk/solution", u, step, time)
 end
@@ -703,22 +711,30 @@ limex:set_stepsize_greedy_order_factor(1)
 limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
+limexEstimator = ScaledGridFunctionEstimator()
+
 errorEvalCaCyt = H1ComponentSpace("ca_cyt", "cyt", 3)  -- fct names, subset names, order
 errorEvalCaER = H1ComponentSpace("ca_er", "er", 3)
 errorEvalClb = H1ComponentSpace("clb", "cyt", 3)
-errorEvalO2 = L2ComponentSpace("o2", 3, 1.0, "erm")  -- fct names, order, weight, subset names
-errorEvalC1 = L2ComponentSpace("c1", 3, 1.0, "erm")
-errorEvalC2 = L2ComponentSpace("c2", 3, 1.0, "erm")
---errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names, scale
---errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names, scale
-limexEstimator = ScaledGridFunctionEstimator()
 limexEstimator:add(errorEvalCaCyt)
 limexEstimator:add(errorEvalCaER)
---limexEstimator:add(errorEvalClb)
---limexEstimator:add(errorEvalO2)
---limexEstimator:add(errorEvalC1)
---limexEstimator:add(errorEvalC2)
+limexEstimator:add(errorEvalClb)
+
+if withIP3R then
+	errorEvalIP3 = H1ComponentSpace("ip3", "cyt", 3)
+	limexEstimator:add(errorEvalIP3)
+end
+if withRyR then
+	errorEvalO2 = L2ComponentSpace("o2", 3, 1.0, "erm")  -- fct names, order, weight, subset names
+	errorEvalC1 = L2ComponentSpace("c1", 3, 1.0, "erm")
+	errorEvalC2 = L2ComponentSpace("c2", 3, 1.0, "erm")
+	limexEstimator:add(errorEvalO2)
+	limexEstimator:add(errorEvalC1)
+	limexEstimator:add(errorEvalC2)
+end
+
 limex:add_error_estimator(limexEstimator)
+
 
 -- for vtk output
 if generateVTKoutput then 
@@ -759,37 +775,39 @@ function measWaveActivity(step, time, dt)
 	end
 	
 	-- measure wave front x position
-	local measPt = math.floor(time/measInterval)
-	waveFrontXPos = wave_front_x(curSol, "c1, c2", "erm", 0.1)
-	if measPt > lastMeasPt then
-		-- write current wave front location to file
-		if ProcRank() == 0 then
-			if waveFrontXPos < -1e10 then
-				waveFrontPosFH:write(time, "\t", 0.0, "\n")
-			else
-				waveFrontPosFH:write(time, "\t", waveFrontXPos + 25.0, "\n")
+	if withRyR then
+		local measPt = math.floor(time/measInterval)
+		waveFrontXPos = wave_front_x(curSol, "c1, c2", "erm", 0.1)
+		if measPt > lastMeasPt then
+			-- write current wave front location to file
+			if ProcRank() == 0 then
+				if waveFrontXPos < -1e10 then
+					waveFrontPosFH:write(time, "\t", 0.0, "\n")
+				else
+					waveFrontPosFH:write(time, "\t", waveFrontXPos + 25.0, "\n")
+				end
+				waveFrontPosFH:flush()
 			end
-			waveFrontPosFH:flush()
+			
+			-- write complete wave profile to file
+			--wpe:exportWaveProfileX(curSol, time)
+		
+			lastMeasPt = measPt	
 		end
 		
-		-- write complete wave profile to file
-		--wpe:exportWaveProfileX(curSol, time)
-	
-		lastMeasPt = measPt	
+		
+		-- measure maximal RyR flux density
+		local ryrFluxDens = max_ryr_flux_density(curSol, "ca_cyt, ca_er, c1, c2", "erm", ryr)
+		if ryrFluxDens > maxRyRFluxDens then
+			maxRyRFluxDens = ryrFluxDens
+		elseif ryrFluxDens < 0.25 * maxRyRFluxDens then -- wave got stuck
+			waveGotStuck = true
+			stuckWaveXPos = waveFrontXPos
+			interruptTime = time
+			limex:interrupt()
+		end
 	end
-	
-	
-	-- measure maximal RyR flux density
-	local ryrFluxDens = max_ryr_flux_density(curSol, "ca_cyt, ca_er, c1, c2", "erm", ryr)
-	if ryrFluxDens > maxRyRFluxDens then
-		maxRyRFluxDens = ryrFluxDens
-	elseif ryrFluxDens < 0.25 * maxRyRFluxDens then -- wave got stuck
-		waveGotStuck = true
-		stuckWaveXPos = waveFrontXPos
-		interruptTime = time
-		limex:interrupt()
-	end
-	
+			
 	print("Current (real) time: " .. time .. ",   last dt: " .. dt)
 		
 	return 0.0
