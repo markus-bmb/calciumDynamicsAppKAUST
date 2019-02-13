@@ -120,7 +120,7 @@ if ProcRank() == 0 then
 	gen:set_num_segments(nSeg)
 	
 	gridName = outDir .. "grid/" .. gridName
-	gen:create_dendrite_influxLeft(gridName)
+	gen:create_dendrite(gridName)
 end
 
 PclDebugBarrierAll()

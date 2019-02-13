@@ -29,4 +29,4 @@ gen:set_synapse_area(synArea)
 gen:set_num_segments(nSeg)
 if bobbel then gen:set_bobbel_er(1, 1) end
 
-gen:create_dendrite(gridName)
+gen:create_dendrite_middle_influx(gridName)

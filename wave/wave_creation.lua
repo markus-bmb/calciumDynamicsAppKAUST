@@ -111,7 +111,7 @@ if not useExistingGrid then
 		gen:set_num_segments(nSeg)
 		
 		gridName = outDir .. "grid/" .. gridName
-		gen:create_dendrite(gridName)
+		gen:create_dendrite_middle_influx(gridName)
 	end
 	PclDebugBarrierAll()
 end
