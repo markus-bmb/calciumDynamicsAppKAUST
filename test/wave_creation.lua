@@ -250,7 +250,7 @@ end
 
 -- global refinements
 for i = 1, numGlobRefs do
-	mark_global(refiner, approxSpace)
+	mark_global(refiner, dom)
 	refiner:refine()
 end
 

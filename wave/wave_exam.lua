@@ -41,6 +41,7 @@ erRadius = util.GetParamNumber("-erRadius", erRadius or 0.158)
 nSeg = util.GetParamNumber("-nSeg", 96)
 
 -- refinements (global and at ERM)
+numPreRefs = util.GetParamNumber("-numPreRefs", 0)
 numGlobRefs = util.GetParamNumber("-numGlobRefs", 0)
 numERMRefs = util.GetParamNumber("-numERMRefs", 0)
 
@@ -255,7 +256,7 @@ end
 
 -- load domain
 reqSubsets = {"cyt", "er", "pm", "erm", "act", "meas"}
-dom = util.CreateDomain(gridName, 0, reqSubsets)
+dom = util.CreateDomain(gridName, numPreRefs, reqSubsets)
 
 -- create approximation space
 approxSpace = ApproximationSpace(dom)
@@ -306,29 +307,12 @@ if useBlockAlgebra then
 end
 
 
--- ERM refinements
-strat = SurfaceMarking(dom)
-strat:add_surface("erm", "cyt")
-
-refiner = HangingNodeDomainRefiner(dom)
-
-for i = 1, numERMRefs do
-	strat:mark_without_error(refiner, approxSpace)
-	refiner:refine()
-end
-
--- global refinements
-for i = 1, numGlobRefs do
-	mark_global(refiner, approxSpace)
-	refiner:refine()
-end
-
-
 -- in parallel environments: domain distribution
 balancer.partitioner = "parmetis"
 balancer.staticProcHierarchy = true
-balancer.firstDistLvl = -1
-balancer.redistSteps = 0
+balancer.firstDistLvl = numPreRefs
+balancer.firstDistProcs = 96
+balancer.redistSteps = 4
 balancer.parallelElementThreshold = 4
 
 balancer.ParseParameters()
@@ -354,6 +338,24 @@ if loadBalancer ~= nil then
 	if balancer.partitioner == "parmetis" then
 		print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
 	end
+end
+
+
+-- ERM refinements
+strat = SurfaceMarking(dom)
+strat:add_surface("erm", "cyt")
+
+refiner = HangingNodeDomainRefiner(dom)
+
+for i = 1, numERMRefs do
+	strat:mark_without_error(refiner, approxSpace)
+	refiner:refine()
+end
+
+-- global refinements
+for i = 1, numGlobRefs do
+	mark_global(refiner, dom)
+	refiner:refine()
 end
 
 print(dom:domain_info():to_string())
@@ -625,7 +627,7 @@ elseif (solverID == "GS") then
 else -- (solverID == "GMG")
 	gmg = GeometricMultiGrid(approxSpace)
 	gmg:set_discretization(timeDisc)
-	gmg:set_base_level(0)
+	gmg:set_base_level(numPreRefs)
 	gmg:set_gathered_base_solver_if_ambiguous(true)
 	
 	-- treat SuperLU problems with Dirichlet constraints by using constrained version
@@ -745,6 +747,7 @@ end
 -- for measurements
 waveHitEnd = false
 waveGotStuck = false
+waveFrontXPos = -0.5*dendLength
 maxRyRFluxDens = 0.0
 stuckWaveXPos = 0.0
 interruptTime = 0.0
@@ -754,9 +757,11 @@ interruptTime = 0.0
 if ProcRank() == 0 then
 	waveFrontPosFile = outDir.."meas/waveFrontX.dat"
 	waveFrontPosFH = assert(io.open(waveFrontPosFile, "a"))
+	waveFrontPosFH:write(0.0, "\t", waveFrontXPos + 0.5*dendLength, "\n")
+	waveFrontPosFH:flush()
 end
 measInterval = 1e-4
-lastMeasPt = -1
+lastMeasPt = 0
 --wpe = WaveProfileExporter(approxSpace, "ca_cyt", "erm", outDir .. "meas/waveProfile")
 
 
@@ -776,27 +781,30 @@ function measWaveActivity(step, time, dt)
 	
 	-- measure wave front x position
 	if withRyR then
-		local measPt = math.floor(time/measInterval)
+		lastWaveFrontXPos = waveFrontXPos
 		waveFrontXPos = wave_front_x(curSol, "c1, c2", "erm", 0.1)
+		--waveFrontXPos = wave_front_x(curSol, "ca_cyt", "erm", 6e-8)
+		if waveFrontXPos < -1e10 then
+			waveFrontXPos = -0.5*dendLength
+		end		
+
+		local measPt = math.floor(time/measInterval)
 		if measPt > lastMeasPt then
 			-- write current wave front location to file
 			if ProcRank() == 0 then
-				if waveFrontXPos < -1e10 then
-					waveFrontPosFH:write(time, "\t", 0.0, "\n")
-				else
-					waveFrontPosFH:write(time, "\t", waveFrontXPos + 25.0, "\n")
-				end
+				waveFrontPosFH:write(time, "\t", waveFrontXPos + 0.5*dendLength, "\n")
 				waveFrontPosFH:flush()
 			end
 			
 			-- write complete wave profile to file
 			--wpe:exportWaveProfileX(curSol, time)
-		
-			lastMeasPt = measPt	
+			
+			lastMeasPt = measPt
 		end
 		
 		
-		-- measure maximal RyR flux density
+		-- in case the wave front becomes stuck: terminate
+		---[[
 		local ryrFluxDens = max_ryr_flux_density(curSol, "ca_cyt, ca_er, c1, c2", "erm", ryr)
 		if ryrFluxDens > maxRyRFluxDens then
 			maxRyRFluxDens = ryrFluxDens
@@ -806,6 +814,16 @@ function measWaveActivity(step, time, dt)
 			interruptTime = time
 			limex:interrupt()
 		end
+		--]]
+		
+		--[[
+		if waveFrontXPos < lastWaveFrontXPos then 
+			waveGotStuck = true
+			stuckWaveXPos = lastWaveFrontXPos
+			interruptTime = time
+			limex:interrupt()
+		end
+		--]]
 	end
 			
 	print("Current (real) time: " .. time .. ",   last dt: " .. dt)

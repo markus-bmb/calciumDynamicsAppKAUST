@@ -30,13 +30,18 @@ end
 -- choice of bisection parameter
 bisecParam = util.GetParam("-bisec", "erRad")
 
+-- optionally provide bounds (will not be checked)
+lBnd = util.GetParamNumber("-lBnd", nil)
+uBnd = util.GetParamNumber("-uBnd", nil)
+
+
 if bisecParam == "erRad" then
 	dendRadius = util.GetParamNumber("-dendRadius", 0.5)
-	erRadius = dendRadius / 16.0
-	inc = erRadius	
+	erRadius = lBnd or dendRadius / 16.0
+	inc = erRadius
 	accuracy = 0.001
 elseif bisecParam == "ryrDens" then
-	ryrDens = 1.0
+	ryrDens = lBnd or 1.0
 	inc = ryrDens
 	accuracy = 0.001
 else
@@ -47,39 +52,49 @@ end
 -- phase 1: double parameter until wave is elicited
 waveHitEnd = false -- global variable waveHitEnd will be set to true by simulation script
 			       -- iff a wave has been detected
-while true do
-	-- execute simulation with this parameter setting
-	print("Executing simulation script '" .. simFile .. "' ...")
-	dofile(simFile)
-	
-	if not waveHitEnd then
-		print("")
-		print("----------------------------------")
-		print("No wave has been elicited.")
-		if bisecParam == "erRad" then
-			if erRadius >= 0.95*dendRadius then
-				print("ERROR: Even with an ER radius of >= 0.95*dendRadius, "
-					  .. "no calcium wave could be elicited.")
-				exit()
+
+if uBnd == nil then
+	while true do
+		-- execute simulation with this parameter setting
+		print("Executing simulation script '" .. simFile .. "' ...")
+		dofile(simFile)
+		
+		if not waveHitEnd then
+			print("")
+			print("----------------------------------")
+			print("No wave has been elicited.")
+			if bisecParam == "erRad" then
+				if erRadius >= 0.95*dendRadius then
+					print("ERROR: Even with an ER radius of >= 0.95*dendRadius, "
+						  .. "no calcium wave could be elicited.")
+					exit()
+				end
+				inc = erRadius
+				erRadius = 2.0*erRadius
+				if erRadius > 0.95*dendRadius then
+					inc = inc - (erRadius - 0.95*dendRadius)
+					erRadius = 0.95*dendRadius
+				end
+				print("Increasing erRadius to " .. erRadius .. ".")
+			elseif bisecParam == "ryrDens" then
+				inc = ryrDens
+				ryrDens = 2.0*ryrDens
+				print("Increasing ryrDensity to " .. ryrDens .. ".")
 			end
-			inc = erRadius
-			erRadius = 2.0*erRadius
-			if erRadius > 0.95*dendRadius then
-				inc = inc - (erRadius - 0.95*dendRadius)
-				erRadius = 0.95*dendRadius
-			end
-			print("Increasing erRadius to " .. erRadius .. ".")
-		elseif bisecParam == "ryrDens" then
-			inc = ryrDens
-			ryrDens = 2.0*ryrDens
-			print("Increasing ryrDensity to " .. ryrDens .. ".")
+			print("----------------------------------")
+			print("")
+		else
+			break
 		end
-		print("----------------------------------")
-		print("")
-	else
-		break
 	end
+else
+	if bisecParam == "erRad" then
+		inc = uBnd - erRadius
+	elseif bisecParam == "ryrDens" then
+		inc = uBnd - ryrDens
+	end 
 end
+
 
 -- phase 2: bisection to find the exact threshold
 inc = 0.5*inc

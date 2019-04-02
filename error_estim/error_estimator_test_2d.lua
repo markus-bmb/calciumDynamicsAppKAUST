@@ -9,6 +9,7 @@ SetOutputProfileStats(false)
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
+ug_load_script("util/load_balancing_util.lua")
 
 -- dimension
 dim = 2
@@ -17,7 +18,7 @@ dim = 2
 InitUG(dim, AlgebraType("CPU", 1));
 
 -- choice of grid
-gridName = "error_estimator_test_2d.ugx"
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/error_estimator_test_2d_long.ugx")
 --gridName = "paper_test_2d.ugx"
 
 -- total refinements
@@ -102,76 +103,24 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
 ---------------------------------------------------------------------
-function CaCytStart(x, y, t)
-    return ca_cyt_init
-end
-
-function CaERStart(x, y, t)
-    return ca_er_init
-end
-
-function IP3Start(x, y, t)
-    return ip3_init
-end
-
-function clbStart(x, y, t)
-    return clb_init
-end
-
-function ourDiffTensorCAcyt(x, y, t)
-    return	D_cac, 0,
-            0, D_cac
-end
-
-function ourDiffTensorCAer(x, y, t)
-    return	D_cae, 0,
-            0, D_cae
-end
-
-function ourDiffTensorIP3(x, y, t)
-    return	D_ip3, 0,
-            0, D_ip3
-end
-
-function ourDiffTensorClb(x, y, t)
-    return	D_clb, 0,
-            0, D_clb
-end
-
-function ourRhs(x, y, t)
-    return 0;
-end
-
-
-function IP3Rdensity(x,y,t,si)
-	return 17.3
-end
-
-function RYRdensity(x,y,t,si)
-	return 0.4--0.86
-end
+IP3Rdensity = 17.3
+RYRdensity = 0.4
+LEAKERconstant = 3.8e-17
 
 -- this is a little bit more complicated, since it must be ensured that
 -- the net flux for equilibrium concentrations is zero
 -- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
-function SERCAdensity(x,y,t,si)
-	local v_s = 6.5e-27						-- V_S param of SERCA pump
-	local k_s = 1.8e-7						-- K_S param of SERCA pump
-	local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
-	local j_ryr = 1.1204582669024472e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
-	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
-	
-	local dens =  IP3Rdensity(x,y,z,t,si) * j_ip3r
-				+ RYRdensity(x,y,z,t,si) * j_ryr
-				+ LEAKERconstant(x,y,z,t,si) * j_leak
-	dens = dens / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
-	
-	return dens
-end
+local v_s = 6.5e-27						-- V_S param of SERCA pump
+local k_s = 1.8e-7						-- K_S param of SERCA pump
+local j_ip3r = 3.7606194166520605e-23 -- 2.7817352713488838e-23	-- single channel IP3R flux (mol/s) - to be determined via gdb
+local j_ryr = 1.1204582669024472e-21 -- 4.6047720062808216e-22	-- single channel RyR flux (mol/s) - to be determined via gdb
+local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 
-function LEAKERconstant(x,y,t,si)
-	return 3.8e-8
-end
+SERCAdensity =  IP3Rdensity * j_ip3r
+			+ RYRdensity * j_ryr
+			+ LEAKERconstant * j_leak
+SERCAdensity = SERCAdensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
+
 
 pmcaDensity = 500.0
 ncxDensity  = 15.0
@@ -179,7 +128,7 @@ vgccDensity = 1.0
 
 leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s)
 				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s)
-				+ vgccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
+				+ vgccDensity * (-7.475181253921754074e-28)  -- single channel VGCC flux (mol/s)
 				-- *1.5 // * 0.5 for L-type // T-type
 if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
@@ -195,13 +144,13 @@ freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration
 nSpikes = 10   -- number of spikes	
 function ourNeumannBndCA(x, y, t, si)	
 	-- spike train
-	if (si==4 and t <= syn_start + caEntryDuration + nSpikes * 1.0/freq) then
+	if t <= syn_start + caEntryDuration + nSpikes * 1.0/freq then
         t = t % (1.0/freq)
 	end --> now, treat like single spike
 	
 	-- single spike
-	if 	(si==4 and t>syn_start and t<=syn_start+caEntryDuration)
-	then efflux = -2e-4
+	if 	t>syn_start and t<=syn_start+caEntryDuration
+	then efflux = -2e-3
 	else efflux = 0.0
 	end	
     
@@ -224,7 +173,7 @@ ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 corrFact = -10.4
 function ourNeumannBndIP3(x, y, t, si)
-	if 	(si==4 and t>syn_start+ip3EntryDelay and t<=syn_start+ip3EntryDelay+ip3EntryDuration)
+	if 	t>syn_start+ip3EntryDelay and t<=syn_start+ip3EntryDelay+ip3EntryDuration
 	--then efflux = - math.exp(corrFact*t) * 2.1e-5/1.188 * (1.0 - (t-syn_start)/ip3EntryDuration)
 	then efflux = - 2.1e-5 * (1.0 - (t-syn_start)/ip3EntryDuration)
 	else efflux = 0.0
@@ -247,21 +196,32 @@ end
 -- setup approximation space --
 -------------------------------
 -- create, load, refine and distribute domain
-print("create, refine and distribute domain")
-neededSubsets = {}
-distributionMethod = "metisReweigh"
-weightingFct = InterSubsetPartitionWeighting()
-weightingFct:set_default_weights(1,1)
-weightingFct:set_inter_subset_weight(0, 1, 1000)
-dom = util.CreateAndDistributeDomain(gridName, numRefs, 0, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
+dom = util.CreateDomain(gridName, numRefs)
 
----[[
---print("Saving domain grid and hierarchy.")
-SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
-SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
---print("Saving parallel grid layout")
-SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
---]]
+balancer.partitioner = "parmetis"
+balancer.staticProcHierarchy = -1
+balancer.firstDistLvl = 0
+balancer.firstDistProcs = 120
+balancer.ParseParameters()
+
+loadBalancer = balancer.CreateLoadBalancer(dom)
+if loadBalancer ~= nil then
+	cdgm = ClusteredDualGraphManager()
+	mu = ManifoldUnificator(dom)
+    cdgm:add_unificator(mu)
+	balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+	balancer.qualityRecordName = "coarse"
+	balancer.Rebalance(dom, loadBalancer)
+	
+	edgeCut = balancer.defaultPartitioner:edge_cut_on_lvl(0)
+	print("Edge cut on base level: " .. edgeCut)
+
+	loadBalancer:estimate_distribution_quality()
+	loadBalancer:print_quality_records()
+end
+
+--SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), fileName.."grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
+--SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 
 -- create approximation space
 print("Create ApproximationSpace")
@@ -272,6 +232,7 @@ cytVol = "cyt"
 erVol = "er"
 
 plMem = "mem_cyt, syn"
+plMem_vec = {"mem_cyt", "syn"}
 
 erMem = "mem_er"
 measZonesERM = "measZoneERM"..1
@@ -292,26 +253,6 @@ approxSpace:init_levels()
 approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
---------------------------
--- setup user functions --
---------------------------
-print ("Setting up Assembling")
-
--- start value function setup
-CaCytStartValue = LuaUserNumber2d("CaCytStart")
-CaERStartValue = LuaUserNumber2d("CaERStart")
-IP3StartValue = LuaUserNumber2d("IP3Start")
-ClbStartValue = LuaUserNumber2d("clbStart")
-
--- diffusion Tensor setup
-diffusionMatrixCAcyt = LuaUserMatrix2d("ourDiffTensorCAcyt")
-diffusionMatrixCAer = LuaUserMatrix2d("ourDiffTensorCAer")
-diffusionMatrixIP3 = LuaUserMatrix2d("ourDiffTensorIP3")
-diffusionMatrixClb = LuaUserMatrix2d("ourDiffTensorClb")
-
--- rhs setup
-rhs = LuaUserNumber2d("ourRhs")
-
 
 ----------------------------
 -- setup error estimators --
@@ -331,32 +272,19 @@ eeMult:set_consider_me(false) -- not necessary (default)
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
--- Note: No VelocityField and Reaction is set. The assembling assumes default
---       zero values for them
-
-if dim == 2 then 
-    upwind = NoUpwind2d()
-elseif dim == 3 then 
-    upwind = NoUpwind3d()
-end
-
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
-elemDiscCYT:set_diffusion(diffusionMatrixCAcyt)
-elemDiscCYT:set_upwind(upwind)
+elemDiscCYT:set_diffusion(D_cac)
 
 elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
-elemDiscER:set_diffusion(diffusionMatrixCAer)
-elemDiscER:set_upwind(upwind)
+elemDiscER:set_diffusion(D_cae)
 
 elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
-elemDiscIP3:set_diffusion(diffusionMatrixIP3)
+elemDiscIP3:set_diffusion(D_ip3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
-elemDiscIP3:set_upwind(upwind)
 
 elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
-elemDiscClb:set_diffusion(diffusionMatrixClb)
-elemDiscClb:set_upwind(upwind)
+elemDiscClb:set_diffusion(D_clb)
 
 
 elemDiscCYT:set_error_estimator(eeCaCyt)
@@ -400,17 +328,17 @@ leakER:set_scale_inputs({1e3,1e3})
 leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 
-innerDiscIP3R = TwoSidedMembraneTransportFV1(erMem, ip3r)
-innerDiscIP3R:set_density_function("IP3Rdensity")
+innerDiscIP3R = MembraneTransportFV1(erMem, ip3r)
+innerDiscIP3R:set_density_function(IP3Rdensity)
 
-innerDiscRyR = TwoSidedMembraneTransportFV1(erMem, ryr)
-innerDiscRyR:set_density_function("RYRdensity")
+innerDiscRyR = MembraneTransportFV1(erMem, ryr)
+innerDiscRyR:set_density_function(RYRdensity)
 
-innerDiscSERCA = TwoSidedMembraneTransportFV1(erMem, serca)
-innerDiscSERCA:set_density_function("SERCAdensity")
+innerDiscSERCA = MembraneTransportFV1(erMem, serca)
+innerDiscSERCA:set_density_function(SERCAdensity)
 
-innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
-innerDiscLeak:set_density_function("LEAKERconstant") -- from mol/(um^2 s M) to m/s
+innerDiscLeak = MembraneTransportFV1(erMem, leakER)
+innerDiscLeak:set_density_function(1e12*LEAKERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
 
 
 innerDiscIP3R:set_error_estimator(eeMult)
@@ -423,9 +351,9 @@ innerDiscLeak:set_error_estimator(eeMult)
 ------------------------------
 -- synaptic activity
 ---[[
-neumannDiscCA = UserFluxBoundaryFV1("ca_cyt", plMem)
+neumannDiscCA = UserFluxBoundaryFV1("ca_cyt", "syn")
 neumannDiscCA:set_flux_function("ourNeumannBndCA")
-neumannDiscIP3 = UserFluxBoundaryFV1("ip3", plMem)
+neumannDiscIP3 = UserFluxBoundaryFV1("ip3", "syn")
 neumannDiscIP3:set_flux_function("ourNeumannBndIP3")
 
 neumannDiscCA:set_error_estimator(eeMult)
@@ -458,26 +386,24 @@ leakPM:set_constant(0, 1.0)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
-vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
-					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
-					 "%.3f", ".dat", false)
-vdcc:set_constant(1, 1.5)
+vdcc = VDCC_BG_UserData({"ca_cyt", ""}, plMem_vec, approxSpace)
+vdcc:set_constant(1, 1.0)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
-vdcc:set_file_times(0.001, 0.0)
+vdcc:set_potential_function(-0.07)
 vdcc:init(0.0)
 
-neumannDiscPMCA = TwoSidedMembraneTransportFV1(plMem, pmca)
+neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
 
-neumannDiscNCX = TwoSidedMembraneTransportFV1(plMem, ncx)
+neumannDiscNCX = MembraneTransportFV1(plMem, ncx)
 neumannDiscNCX:set_density_function(ncxDensity)
 
-neumannDiscLeak = TwoSidedMembraneTransportFV1(plMem, leakPM)
+neumannDiscLeak = MembraneTransportFV1(plMem, leakPM)
 neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 
-neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
+neumannDiscVGCC = MembraneTransportFV1(plMem, vdcc)
 neumannDiscVGCC:set_density_function(vgccDensity)
 
 
@@ -639,10 +565,10 @@ newtonSolver:init(op)
 u = GridFunction(approxSpace)
 
 -- set initial value
-Interpolate(CaCytStartValue, u, "ca_cyt", 0.0)
-Interpolate(CaERStartValue, u, "ca_er", 0.0)
-Interpolate(IP3StartValue, u, "ip3", 0.0)
-Interpolate(ClbStartValue, u, "clb", 0.0)
+Interpolate(ca_cyt_init, u, "ca_cyt", 0.0)
+Interpolate(ca_er_init, u, "ca_er", 0.0)
+Interpolate(ip3_init, u, "ip3", 0.0)
+Interpolate(clb_init, u, "clb", 0.0)
 
 -- timestep in seconds
 dt = timeStepStart
@@ -659,7 +585,7 @@ end
 refiner = HangingNodeDomainRefiner(dom)
 TOL = 1e-15
 maxLevel = 6
-maxElem = 50000
+maxElem = 1000000
 refStrat = StdRefinementMarking(TOL, maxLevel)
 coarsStrat = StdCoarseningMarking(TOL)
 
@@ -678,7 +604,7 @@ out_error:clear_selection()
 out_error:select_all(false)
 out_error:select_element("eta_squared", "error")
 
-takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+take_measurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 
 
 -- create new grid function for old value
@@ -884,7 +810,7 @@ while endTime-time > 0.001*dt do
 			end
 			
 			-- take measurement in nucleus every timeStep seconds 
-			takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+			take_measurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
 			
 			-- export solution of ca on mem_er
 			--exportSolution(u, approxSpace, time, "mem_cyt", "ca_cyt", fileName .. "sol/sol");

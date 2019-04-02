@@ -30,9 +30,8 @@ EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 -------------------------------------
 -- parse command line parameters  ---
 -------------------------------------
-
 -- choice of grid name
-gridName = util.GetParam("-grid", "calciumDynamics_app/grids/modelDendrite_discreteRyR.ugx")
+gridName = util.GetParam("-grid", "modelDendrite_discreteRyR.ugx")
 
 -- grid parameters
 dendLength = util.GetParamNumber("-dendLength", 50.0)
@@ -41,6 +40,7 @@ erRadius = util.GetParamNumber("-erRadius", erRadius or 0.158)
 nSeg = util.GetParamNumber("-nSeg", 96)
 
 -- refinements (global and at ERM)
+numPreRefs = util.GetParamNumber("-numPreRefs", 0)
 numGlobRefs = util.GetParamNumber("-numGlobRefs", 0)
 numERMRefs = util.GetParamNumber("-numERMRefs", 0)
 
@@ -104,14 +104,13 @@ InitUG(2, AlgebraType("CPU", 1))
 -----------------------
 -- geometry creation --
 -----------------------
+ryrDist = 1.0 / (2*math.pi*erRadius*ryrDens) 
 if ProcRank() == 0 then
 	gen = MorphoGenCD()
 	gen:set_dendrite_length(dendLength)
 	gen:set_dendrite_radius(dendRadius)
 	gen:set_er_radius(erRadius)
 	gen:set_num_segments(nSeg)
-	
-	ryrDist = 1.0 / (2*math.pi*erRadius*ryrDens) 
 	
 	gridName = outDir .. "grid/" .. gridName
 	gen:create_dendrite_discreteRyR(gridName, ryrDist)
@@ -248,7 +247,7 @@ end
 
 -- load domain
 reqSubsets = {"cyt", "er", "pm", "erm", "ryr", "act", "meas"}
-dom = util.CreateDomain(gridName, 0, reqSubsets)
+dom = util.CreateDomain(gridName, numPreRefs, reqSubsets)
 
 -- create approximation space
 approxSpace = ApproximationSpace(dom)
@@ -281,30 +280,12 @@ approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
 
 
--- ERM refinements
-strat = SurfaceMarking(dom)
-strat:add_surface("erm", "cyt")
-strat:add_surface("ryr", "cyt")
-
-refiner = HangingNodeDomainRefiner(dom)
-
-for i = 1, numERMRefs do
-	strat:mark_without_error(refiner, approxSpace)
-	refiner:refine()
-end
-
--- global refinements
-for i = 1, numGlobRefs do
-	mark_global(refiner, approxSpace)
-	refiner:refine()
-end
-
-
 -- in parallel environments: domain distribution
 balancer.partitioner = "parmetis"
 balancer.staticProcHierarchy = true
-balancer.firstDistLvl = -1
-balancer.redistSteps = 0
+balancer.firstDistLvl = numPreRefs
+balancer.firstDistProcs = 96
+balancer.redistSteps = 4
 balancer.parallelElementThreshold = 4
 
 balancer.ParseParameters()
@@ -331,6 +312,26 @@ if loadBalancer ~= nil then
 		print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
 	end
 end
+
+
+-- ERM refinements
+strat = SurfaceMarking(dom)
+strat:add_surface("erm", "cyt")
+strat:add_surface("ryr", "cyt")
+
+refiner = HangingNodeDomainRefiner(dom)
+
+for i = 1, numERMRefs do
+	strat:mark_without_error(refiner, approxSpace)
+	refiner:refine()
+end
+
+-- global refinements
+for i = 1, numGlobRefs do
+	mark_global(refiner, dom)
+	refiner:refine()
+end
+
 
 print(dom:domain_info():to_string())
 --SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), outDir .. "grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 1.0)
@@ -535,10 +536,17 @@ dbgWriter:set_base_dir(outDir)
 dbgWriter:set_vtk_output(false)
 
 -- biCGstab --
+--[[
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-50)
 convCheck:set_reduction(1e-8)
 convCheck:set_verbose(verbose)
+--]]
+-- StdConvCheck is very problematic if some procs are empty (TRUNCATION, DEADLOCKS, etc.)
+convCheck = CompositeConvCheck(approxSpace, 100, 1e-50, 1e-8)
+convCheck:set_verbose(verbose)
+--convCheck:set_time_measurement(true)
+
 
 if (solverID == "ILU") then
     bcgs_steps = 1000
@@ -551,7 +559,7 @@ elseif (solverID == "GS") then
 else -- (solverID == "GMG")
 	gmg = GeometricMultiGrid(approxSpace)
 	gmg:set_discretization(timeDisc)
-	gmg:set_base_level(0)
+	gmg:set_base_level(numPreRefs)
 	gmg:set_gathered_base_solver_if_ambiguous(true)
 	
 	-- treat SuperLU problems with Dirichlet constraints by using constrained version
@@ -603,7 +611,7 @@ if withRyR then
 end
 
 -- timestep in seconds
-dtmin = 1e-9
+dtmin = 1e-15
 dtmax = 1e-2
 time = 0.0
 step = 0
@@ -627,6 +635,7 @@ for i = 1, nstages do
 end
 
 limex:set_tolerance(toleratedError)
+limex:set_precision_bound(1e-12)
 limex:set_time_step(dt)
 limex:set_dt_min(dtmin)
 limex:set_dt_max(dtmax)
@@ -670,19 +679,23 @@ end
 waveHitEnd = false
 waveGotStuck = false
 waveFrontXPos = 0.0
+waveFrontRyRXPos = 0.0
 maxRyRFluxDens = 0.0
 stuckWaveXPos = 0.0
 interruptTime = 0.0
-
+ryrActivationTime = 0.0
+waveVel = 0.0
+maxWaveVel = 0.0
 
 -- prepare output
 if ProcRank() == 0 then
 	waveFrontPosFile = outDir.."meas/waveFrontX.dat"
 	waveFrontPosFH = assert(io.open(waveFrontPosFile, "a"))
+	waveFrontPosFH:write(0.0, "\t", waveFrontXPos, "\n")
+	waveFrontPosFH:flush()
 end
 measInterval = 1e-4
-lastMeasPt = -1
-lastMeasTime = 0.0
+lastMeasPt = 0
 --wpe = WaveProfileExporter(approxSpace, "ca_cyt", "erm", outDir .. "meas/waveProfile")
 
 
@@ -701,14 +714,19 @@ function measWaveActivity(step, time, dt)
 	end
 	
 	-- measure wave front x position
+	lastWaveFrontXPos = waveFrontXPos
+	lastWaveFrontRyRXPos = waveFrontRyRXPos
+	waveFrontRyRXPos = wave_front_x(curSol, "c1, c2", "ryr", 0.1)
+	waveFrontXPos = wave_front_x(curSol, "ca_cyt", "erm, ryr", 6e-7)
+	if waveFrontXPos < -1e10 then
+		waveFrontXPos = 0.0
+	end
+	if waveFrontRyRXPos < -1e10 then
+		waveFrontRyRXPos = 0.0
+	end
+	
 	local measPt = math.floor(time/measInterval)
 	if measPt > lastMeasPt then
-		lastWaveFrontXPos = waveFrontXPos
-		waveFrontXPos = wave_front_x(curSol, "ca_cyt", "erm, ryr", 5e-7)
-		if waveFrontXPos < -1e10 then
-			waveFrontXPos = 0.0
-		end
-		
 		-- write current wave front location to file
 		if ProcRank() == 0 then
 			waveFrontPosFH:write(time, "\t", waveFrontXPos, "\n")
@@ -718,21 +736,31 @@ function measWaveActivity(step, time, dt)
 		-- write complete wave profile to file
 		--wpe:exportWaveProfileX(curSol, time)
 	
-		-- in case the wave front becomes stuck: terminate
-		print("wave velocity: " .. (waveFrontXPos - lastWaveFrontXPos) / (time - lastMeasTime) .. "um/s")
-		if waveFrontXPos > caEntryDuration
-			and (waveFrontXPos - lastWaveFrontXPos) / (time - lastMeasTime) < 10.0  -- um/s
-		then 
-			waveGotStuck = true
-			stuckWaveXPos = waveFrontXPos
-			interruptTime = time
-			limex:interrupt()
-		end
-		
 		lastMeasPt = measPt
-		lastMeasTime = time
 	end
 	
+	-- in case the wave front becomes stuck: terminate
+	if time > caEntryDuration and waveFrontRyRXPos > lastWaveFrontRyRXPos then
+		waveVel = (waveFrontRyRXPos - lastWaveFrontRyRXPos) / (time - ryrActivationTime)
+		ryrActivationTime = time
+		if waveVel > maxWaveVel then
+			maxWaveVel = waveVel
+		end
+	end
+	if waveVel < 0.25*maxWaveVel or maxWaveVel > 0 and time > ryrActivationTime + 4*ryrDist/maxWaveVel then
+		waveGotStuck = true
+		stuckWaveXPos = lastWaveFrontXPos
+		interruptTime = time
+		limex:interrupt()
+	end
+	--[[	
+	if waveFrontXPos < lastWaveFrontXPos then
+		waveGotStuck = true
+		stuckWaveXPos = lastWaveFrontXPos
+		interruptTime = time
+		limex:interrupt()
+	end
+	--]]
 	print("Current (real) time: " .. time .. ",   last dt: " .. dt)
 	
 	return 0.0
