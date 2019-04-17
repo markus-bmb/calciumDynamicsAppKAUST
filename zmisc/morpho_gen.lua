@@ -21,7 +21,7 @@ synArea = util.GetParamNumber("-synArea", math.pi*0.5)
 nSeg = util.GetParamNumber("-nSeg", 100)
 bobbel = util.HasParamOption("-bob")
 
-gen = MorphoGenCD()
+gen = DendriteGenerator()
 gen:set_dendrite_length(dendLength)
 gen:set_dendrite_radius(dendRadius)
 gen:set_er_radius(erRadius)

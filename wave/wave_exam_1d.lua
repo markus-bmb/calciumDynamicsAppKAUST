@@ -20,7 +20,7 @@
 ug_load_script("ug_util.lua")
 ug_load_script("plugins/Limex/limex_util.lua")
 
-AssertPluginsLoaded({"calciumDynamics", "neuro_collection", "Limex"})
+AssertPluginsLoaded({"neuro_collection", "Limex"})
 
 EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 --SetDebugLevel(debugID.LUACompiler, 0) 
@@ -108,7 +108,7 @@ end
 -- geometry creation --
 -----------------------
 if ProcRank() == 0 then
-	gen = MorphoGenCD()
+	gen = DendriteGenerator()
 	gen:set_dendrite_length(dendLength)
 	gen:set_dendrite_radius(dendRadius)
 	gen:set_er_radius(erRadius)

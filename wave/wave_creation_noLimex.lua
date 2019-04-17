@@ -100,7 +100,7 @@ end
 -----------------------
 
 if ProcRank() == 0 then
-	gen = MorphoGenCD()
+	gen = DendriteGenerator()
 	gen:set_dendrite_length(dendLength)
 	gen:set_dendrite_radius(dendRadius)
 	gen:set_er_radius(erRadius)
