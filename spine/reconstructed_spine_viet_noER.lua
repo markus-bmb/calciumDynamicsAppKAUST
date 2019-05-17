@@ -1,9 +1,10 @@
 --------------------------------------------------------------
 --  Example script for simulation on 3d reconstructed spine --
+--  without spine endoplasmic reticulum                     --
 --  using a simple adaptive time stepping method.           --
 --                                                          --
 --  Author: Markus Breit                                    --
---  Date: 2018-05-24                                        --
+--  Date: 2019-05-17                                        --
 --------------------------------------------------------------
 
 -- for profiler output
@@ -40,7 +41,7 @@ timeStepStart = timeStepStartNew
 	
 -- choose end time
 endTime = util.GetParamNumber("-endTime")
-if (endTime == nil)
+if endTime == nil
 then
 	-- choose number of time steps
 	nTimeSteps = util.GetParamNumber("-nTimeSteps", 1)
@@ -80,8 +81,6 @@ totalClb = 4*40.0e-6
 
 -- diffusion coefficients
 D_cac = 220.0
-D_cae = 220.0
-D_ip3 = 280.0
 D_clb = 20.0
 
 -- calbindin binding rates
@@ -89,44 +88,9 @@ k_bind_clb = 	27.0e06
 k_unbind_clb = 	19
 
 -- initial concentrations
-ca_cyt_init = 5.0e-08 --4.0e-8
-ca_er_init = 2.5e-4
+ca_cyt_init = 5.0e-08
 ca_ext = 1.0e-3
-ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
-
-
--- reaction reate IP3
-reactionRateIP3 = 0.11
-
--- equilibrium concentration IP3
-equilibriumIP3 = 4.0e-08
-
--- reation term IP3
-reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
-
-IP3Rdensity = 17.3
-RYRdensity = 3.0 --0.86
-leakERconstant = 3.8e-17
-
--- this is a little bit more complicated, since it must be ensured that
--- the net flux for equilibrium concentrations is zero
--- MUST be adapted whenever any parameterization of ER flux mechanisms is changed!
-local v_s = 6.5e-27						-- V_S param of SERCA pump
-local k_s = 1.8e-7						-- K_S param of SERCA pump
-local j_ip3r = 3.7606194166520605e-23   -- single channel IP3R flux (mol/s) - to be determined via gdb
-local j_ryr = 1.1201015633466695e-21    -- single channel RyR flux (mol/s) - to be determined via gdb
-				  							-- ryr1: 1.1204582669024472e-21	
-local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
-	
-SERCAdensity = leakERconstant * j_leak
-if withIP3R then 
-	SERCAdensity = SERCAdensity + IP3Rdensity * j_ip3r
-end
-if withRyR then
-	SERCAdensity = SERCAdensity + RYRdensity * j_ryr
-end
-SERCAdensity = SERCAdensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 
 pmcaDensity = 500.0
 ncxDensity  = 15.0
@@ -140,39 +104,28 @@ if leakPMconstant < 0 then error("PM leak flux is outward for these density sett
 
 
 -- firing pattern of the synapse
-synSubset = 4
 synStartTime = 0.0
 caEntryDuration = 0.01
 
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
-nSpikes = 10   -- number of spikes	
+nSpikes = 1    -- number of spikes	
 function neumannBndCa(x, y, z, t, si)	
 	-- spike train
-	if (si == synSubset and t <= synStartTime + caEntryDuration + (nSpikes - 1) * 1.0/freq) then
+	if t <= synStartTime + caEntryDuration + (nSpikes - 1) * 1.0/freq then
         t = t % (1.0/freq)
 	end --> now, treat like single spike
 	
 	-- single spike
-	if 	(si == synSubset and t <= caEntryDuration)
-	then influx = 0.04 * (1.0 - t/caEntryDuration)
-	else influx = 0.0
+	if 	t <= caEntryDuration then
+		influx = 0.04 * (1.0 - t/caEntryDuration)
+	else
+		influx = 0.0
 	end
 	
     return influx
 end
 
-
--- burst of ip3 at active synapse (triangular, immediate)
-ip3EntryDelay = 0.000
-ip3EntryDuration = 0.2
-function neumannBndIP3(x, y, z, t, si)
-	if 	(si == synSubset and synStartTime+ip3EntryDelay < t and t <= synStartTime+ip3EntryDelay+ip3EntryDuration)
-	then influx = 2e-3 * (1.0 - t/ip3EntryDuration)
-	else influx = 0.0
-	end
-    return influx
-end
 
 -------------------------------
 -- setup approximation space --
@@ -180,7 +133,7 @@ end
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
 
-reqSubsets = {"cyt", "er", "pm", "erm", "syn"}
+reqSubsets = {"cyt", "pm", "syn"}
 dom = util.CreateDomain(gridName, 0, reqSubsets)
 
 balancer.partitioner = "parmetis"
@@ -196,14 +149,6 @@ loadBalancer = balancer.CreateLoadBalancer(dom)
 
 -- add distribution protection for ER membrane, then distribute
 if loadBalancer ~= nil then
-	if balancer.partitioner == "parmetis" then
-		mu = ManifoldUnificator(dom)
-		mu:add_protectable_subsets("erm")
-		cdgm = ClusteredDualGraphManager()
-		cdgm:add_unificator(SiblingUnificator())
-		cdgm:add_unificator(mu)
-		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
-	end
 	balancer.Rebalance(dom, loadBalancer)
 end
 
@@ -234,19 +179,13 @@ SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx",
 approxSpace = ApproximationSpace(dom)
 
 cytVol = "cyt"
-erVol = "er"
 plMem = "pm, syn"
 plMem_vec = {"pm", "syn"}
-erMem = "erm"
-erMemVec = {"erm"}
 
-outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
-innerDomain = erVol .. ", " .. erMem
+outerDomain = cytVol .. ", " .. plMem
 
-approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
-approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
-approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
-approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("ca_cyt", "Lagrange", 1)
+approxSpace:add_fct("clb", "Lagrange", 1)
 
 approxSpace:init_levels()
 approxSpace:print_layout_statistic()
@@ -260,14 +199,6 @@ approxSpace:print_statistic()
 elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
 elemDiscCYT:set_diffusion(D_cac)
 
-elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
-elemDiscER:set_diffusion(D_cae)
-
-elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
-elemDiscIP3:set_diffusion(D_ip3)
-elemDiscIP3:set_reaction_rate(reactionRateIP3)
-elemDiscIP3:set_reaction(reactionTermIP3)
-
 elemDiscClb = ConvectionDiffusion("clb", cytVol, "fv1")
 elemDiscClb:set_diffusion(D_clb)
 
@@ -279,41 +210,6 @@ elemDiscBuffering:add_reaction(
 	totalClb,						-- total amount of buffer
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
-
-
--- er membrane transport systems
-
--- We pass the function needed to evaluate the flux function here.
--- The order, in which the discrete fcts are passed, is crucial!
-ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
-ip3r:set_scale_inputs({1e3,1e3,1e3})
-ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-
---ryr = RyR({"ca_cyt", "ca_er"})
-ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
-ryr:set_scale_inputs({1e3,1e3})
-ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-
-serca = SERCA({"ca_cyt", "ca_er"})
-serca:set_scale_inputs({1e3,1e3})
-serca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-
-leakER = Leak({"ca_er", "ca_cyt"})
-leakER:set_scale_inputs({1e3,1e3})
-leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
-
-
-discIP3R = MembraneTransportFV1(erMem, ip3r)
-discIP3R:set_density_function(IP3Rdensity)
-
-discRyR = MembraneTransportFV1(erMem, ryr)
-discRyR:set_density_function(RYRdensity)
-
-discSERCA = MembraneTransportFV1(erMem, serca)
-discSERCA:set_density_function(SERCAdensity)
-
-discERLeak = MembraneTransportFV1(erMem, leakER)
-discERLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
 
 
 -- plasma membrane transport systems
@@ -344,11 +240,8 @@ discPMLeak:set_density_function(1e9*leakPMconstant / (ca_ext - ca_cyt_init))
 
 
 -- synaptic activity
-synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", plMem)
+synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
 synapseInfluxCa:set_flux_function("neumannBndCa")
-
-synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", plMem)
-synapseInfluxIP3:set_flux_function("neumannBndIP3")
 
 
 ------------------------------------------
@@ -356,9 +249,7 @@ synapseInfluxIP3:set_flux_function("neumannBndIP3")
 ------------------------------------------
 domainDisc = DomainDiscretization(approxSpace)
 
-domainDisc:add(elemDiscER)
 domainDisc:add(elemDiscCYT)
-domainDisc:add(elemDiscIP3)
 domainDisc:add(elemDiscClb)
 
 domainDisc:add(elemDiscBuffering)
@@ -368,13 +259,7 @@ domainDisc:add(discNCX)
 domainDisc:add(discPMLeak)
 --domainDisc:add(discVDCC)
 
-domainDisc:add(discIP3R)
-domainDisc:add(discRyR)
-domainDisc:add(discSERCA)
-domainDisc:add(discERLeak)
-
 domainDisc:add(synapseInfluxCa)
-domainDisc:add(synapseInfluxIP3)
 
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domainDisc)
@@ -423,7 +308,7 @@ else -- (solverID == "GMG")
 	gmg:set_cycle_type(1)
 	gmg:set_num_presmooth(3)
 	gmg:set_num_postsmooth(3)
-	--gmg:set_rap(true) -- causes error in base solver!!
+	gmg:set_rap(true)
 	--gmg:set_debug(GridFunctionDebugWriter(approxSpace))
 	
     bcgs_steps = 1000
@@ -440,7 +325,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 --- non-linear solver ---
 -- convergence check
 newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-18, 1e-12)
---newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-12)
+--newtonConvCheck:set_component_check("ca_cyt, clb", 1e-18, 1e-12)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 --newtonConvCheck:set_adaptive(true)
@@ -461,8 +346,6 @@ u = GridFunction(approxSpace)
 
 -- set initial value
 Interpolate(ca_cyt_init, u, "ca_cyt", 0.0)
-Interpolate(ca_er_init, u, "ca_er", 0.0)
-Interpolate(ip3_init, u, "ip3", 0.0)
 Interpolate(clb_init, u, "clb", 0.0)
 
 
@@ -471,13 +354,12 @@ dt = timeStepStart
 time = 0.0
 step = 0
 
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
-take_measurement(u, time, "cyt", "ca_cyt, ip3, clb", fileName .. "meas/data")
-take_measurement(u, time, "er", "ca_er", fileName .. "meas/data")
+take_measurement(u, time, "cyt", "ca_cyt, clb", fileName .. "meas/data")
 
 
 -- create new grid function for old value
@@ -531,14 +413,13 @@ while endTime-time > 0.001*dt do
 		end
 		
 		-- plot solution every plotStep seconds
-		if (generateVTKoutput) then
+		if generateVTKoutput then
 			if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
 				out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
 			end
 		end
 		
-		take_measurement(u, time, "cyt", "ca_cyt, ip3, clb", fileName .. "meas/data")
-		take_measurement(u, time, "er", "ca_er", fileName .. "meas/data")
+		take_measurement(u, time, "cyt", "ca_cyt, clb", fileName .. "meas/data")
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
@@ -554,7 +435,7 @@ while endTime-time > 0.001*dt do
 end
 
 -- end timeseries, produce gathering file
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out:write_time_pvd(fileName .. "vtk/result", u)
 end
 
