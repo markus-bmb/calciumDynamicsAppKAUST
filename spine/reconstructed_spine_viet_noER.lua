@@ -14,6 +14,8 @@ SetOutputProfileStats(false)
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
+AssertPluginsLoaded({"neuro_collection", "MembranePotentialMapping"})
+
 -- choose dimension and algebra
 InitUG(3, AlgebraType("CPU", 1));
 
@@ -94,23 +96,27 @@ clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
 
 pmcaDensity = 500.0
 ncxDensity  = 15.0
---vgccDensity = 1.0
+vdccDensity = 1.0
 
 leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s) at 1mM ext. Ca2+
 				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s) at 1mM ext. Ca2+
-				--+ vgccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
+				- vdccDensity * 1.435114751437757757e-28  -- single channel VGCC flux (mol/s) at 1mM ext. Ca2+ and V_m = -0.07V
 				-- *1.5 // * 0.5 for L-type // T-type
 if leakPMconstant < 0 then error("PM leak flux is outward for these density settings!") end
 
 
 -- firing pattern of the synapse
-synStartTime = 0.0
+synStartTime = 10.0
 caEntryDuration = 0.01
 
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 1    -- number of spikes	
 function neumannBndCa(x, y, z, t, si)	
+	if t < synStartTime then
+		return 0.0
+	end
+	
 	-- spike train
 	if t <= synStartTime + caEntryDuration + (nSpikes - 1) * 1.0/freq then
         t = t % (1.0/freq)
@@ -186,6 +192,7 @@ outerDomain = cytVol .. ", " .. plMem
 
 approxSpace:add_fct("ca_cyt", "Lagrange", 1)
 approxSpace:add_fct("clb", "Lagrange", 1)
+approxSpace:add_fct("m", "Lagrange", 1, plMem)
 
 approxSpace:init_levels()
 approxSpace:print_layout_statistic()
@@ -226,7 +233,28 @@ ncx:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 leakPM = Leak({"", "ca_cyt"})
 leakPM:set_constant(0, ca_ext)
 leakPM:set_scale_inputs({1e3,1e3})
-leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
+leakPM:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+
+-- VDCC using script-defined voltage function
+vdccMode = 0  -- 0 for script function voltage, 1 for data file voltage
+if vdccMode == 0 then
+	apSignal = ActionPotentialTrain(0.0, 0.02, 50, -70.0)
+	function membranePotential(x, y, z, t, si)
+		-- 80% of the intensity of the real AP
+		return 1e-3*(-70.0 + 0.8*(apSignal:membrane_potential(t) + 70.0))
+	end
+	vdcc = VDCC_BG_UserData({"ca_cyt", "", "m"}, plMem_vec, approxSpace)
+	vdcc:set_potential_function("membranePotential")
+elseif vdccMode == 1 then
+	vdcc = VDCC_BG_VM2UG({"ca_cyt", "", "m"}, plMem_vec, approxSpace,
+			"voltageData/vm_", "%.5f", ".dat", false)
+	vdcc:set_file_times(1e-5, 0.0) -- file interval is 0.01ms, starting at 0.0
+end
+vdcc:set_constant(1, ca_ext)
+vdcc:set_scale_inputs({1e3, 1e3, 1.0})
+vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+vdcc:set_channel_type_L()
+vdcc:init(0.0)
 
 
 discPMCA = MembraneTransportFV1(plMem, pmca)
@@ -236,8 +264,10 @@ discNCX = MembraneTransportFV1(plMem, ncx)
 discNCX:set_density_function(ncxDensity)
 
 discPMLeak = MembraneTransportFV1(plMem, leakPM)
-discPMLeak:set_density_function(1e9*leakPMconstant / (ca_ext - ca_cyt_init))
+discPMLeak:set_density_function(leakPMconstant / (1e3*(ca_ext - ca_cyt_init)))
 
+discVDCC = MembraneTransportFV1(plMem, vdcc)
+discVDCC:set_density_function(vdccDensity)
 
 -- synaptic activity
 synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
@@ -257,7 +287,8 @@ domainDisc:add(elemDiscBuffering)
 domainDisc:add(discPMCA)
 domainDisc:add(discNCX)
 domainDisc:add(discPMLeak)
---domainDisc:add(discVDCC)
+domainDisc:add(discVDCC)
+domainDisc:add(vdcc)  -- for gating param discretization
 
 domainDisc:add(synapseInfluxCa)
 
@@ -324,7 +355,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 
 --- non-linear solver ---
 -- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-18, 1e-12)
+newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-18, 1e-08)
 --newtonConvCheck:set_component_check("ca_cyt, clb", 1e-18, 1e-12)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
@@ -347,7 +378,7 @@ u = GridFunction(approxSpace)
 -- set initial value
 Interpolate(ca_cyt_init, u, "ca_cyt", 0.0)
 Interpolate(clb_init, u, "clb", 0.0)
-
+vdcc:calculate_steady_state(u, -0.07)
 
 -- timestep in seconds
 dt = timeStepStart
