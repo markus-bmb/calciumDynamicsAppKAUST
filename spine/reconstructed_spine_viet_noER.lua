@@ -106,7 +106,7 @@ if leakPMconstant < 0 then error("PM leak flux is outward for these density sett
 
 
 -- firing pattern of the synapse
-synStartTime = 10.0
+synStartTime = 0.0
 caEntryDuration = 0.01
 
 -- burst of calcium influx for active synapses (~1200 ions)
