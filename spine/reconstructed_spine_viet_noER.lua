@@ -112,7 +112,7 @@ caEntryDuration = 0.01
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 1    -- number of spikes	
-function neumannBndCa(x, y, z, t, si)	
+function neumannBndCa(x, y, z, t, si)
 	if t < synStartTime then
 		return 0.0
 	end
@@ -139,7 +139,7 @@ end
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
 
-reqSubsets = {"cyt", "pm", "syn"}
+reqSubsets = {"cyt", "pm", "syn", "meas_dend", "meas_neck", "meas_head"}
 dom = util.CreateDomain(gridName, 0, reqSubsets)
 
 balancer.partitioner = "parmetis"
@@ -185,6 +185,9 @@ SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx",
 approxSpace = ApproximationSpace(dom)
 
 cytVol = "cyt"
+measZones = "meas_head, meas_neck, meas_dend"
+cytVol = cytVol .. ", " .. measZones
+
 plMem = "pm, syn"
 plMem_vec = {"pm", "syn"}
 
@@ -235,7 +238,6 @@ leakPM:set_constant(0, ca_ext)
 leakPM:set_scale_inputs({1e3,1e3})
 leakPM:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
--- VDCC using script-defined voltage function
 vdccMode = 0  -- 0 for script function voltage, 1 for data file voltage
 if vdccMode == 0 then
 	apSignal = ActionPotentialTrain(0.0, 0.02, 50, -70.0)
@@ -390,8 +392,9 @@ if generateVTKoutput then
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
-take_measurement(u, time, "cyt", "ca_cyt, clb", fileName .. "meas/data")
+take_measurement(u, time, measZones, "ca_cyt, clb", fileName .. "meas/data")
 
+compute_volume(approxSpace, "meas_head, meas_neck, syn")
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -403,7 +406,7 @@ solTimeSeries:push(uOld, time)
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
 lv = startLv
-levelUpDelay = caEntryDuration;
+levelUpDelay = caEntryDuration
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
@@ -450,7 +453,7 @@ while endTime-time > 0.001*dt do
 			end
 		end
 		
-		take_measurement(u, time, "cyt", "ca_cyt, clb", fileName .. "meas/data")
+		take_measurement(u, time, measZones, "ca_cyt, clb", fileName .. "meas/data")
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()

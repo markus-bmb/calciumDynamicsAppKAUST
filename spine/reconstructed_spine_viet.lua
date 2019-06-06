@@ -1,5 +1,6 @@
 --------------------------------------------------------------
 --  Example script for simulation on 3d reconstructed spine --
+--  with spine endoplasmic reticulum                        --
 --  using a simple adaptive time stepping method.           --
 --                                                          --
 --  Author: Markus Breit                                    --
@@ -12,6 +13,8 @@ SetOutputProfileStats(false)
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
+
+AssertPluginsLoaded({"neuro_collection", "MembranePotentialMapping"})
 
 -- choose dimension and algebra
 InitUG(3, AlgebraType("CPU", 1));
@@ -130,33 +133,37 @@ SERCAdensity = SERCAdensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 
 pmcaDensity = 500.0
 ncxDensity  = 15.0
---vgccDensity = 1.0
+vdccDensity = 1.0
 
 leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s) at 1mM ext. Ca2+
 				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s) at 1mM ext. Ca2+
-				--+ vgccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
+				- vdccDensity * 1.435114751437757757e-28  -- single channel VGCC flux (mol/s) at 1mM ext. Ca2+ and V_m = -0.07V
 				-- *1.5 // * 0.5 for L-type // T-type
 if leakPMconstant < 0 then error("PM leak flux is outward for these density settings!") end
 
 
 -- firing pattern of the synapse
-synSubset = 4
 synStartTime = 0.0
 caEntryDuration = 0.01
 
 -- burst of calcium influx for active synapses (~1200 ions)
 freq = 50      -- spike train frequency (Hz) (the ineq. 1/freq > caEntryDuration must hold)
 nSpikes = 10   -- number of spikes	
-function neumannBndCa(x, y, z, t, si)	
+function neumannBndCa(x, y, z, t, si)
+	if t < synStartTime then
+		return 0.0
+	end
+		
 	-- spike train
-	if (si == synSubset and t <= synStartTime + caEntryDuration + (nSpikes - 1) * 1.0/freq) then
+	if t <= synStartTime + caEntryDuration + (nSpikes - 1) * 1.0/freq then
         t = t % (1.0/freq)
 	end --> now, treat like single spike
 	
 	-- single spike
-	if 	(si == synSubset and t <= caEntryDuration)
-	then influx = 0.04 * (1.0 - t/caEntryDuration)
-	else influx = 0.0
+	if t <= caEntryDuration then
+		influx = 0.04 * (1.0 - t/caEntryDuration)
+	else
+		influx = 0.0
 	end
 	
     return influx
@@ -167,9 +174,10 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 0.2
 function neumannBndIP3(x, y, z, t, si)
-	if 	(si == synSubset and synStartTime+ip3EntryDelay < t and t <= synStartTime+ip3EntryDelay+ip3EntryDuration)
-	then influx = 2e-3 * (1.0 - t/ip3EntryDuration)
-	else influx = 0.0
+	if synStartTime+ip3EntryDelay < t and t <= synStartTime+ip3EntryDelay+ip3EntryDuration then
+		influx = 2e-3 * (1.0 - t/ip3EntryDuration)
+	else
+		influx = 0.0
 	end
     return influx
 end
@@ -180,7 +188,7 @@ end
 -- create, load, refine and distribute domain
 print("create, refine and distribute domain")
 
-reqSubsets = {"cyt", "er", "pm", "erm", "syn"}
+reqSubsets = {"cyt", "er", "pm", "erm", "syn", "meas_dend", "meas_neck", "meas_head"}
 dom = util.CreateDomain(gridName, 0, reqSubsets)
 
 balancer.partitioner = "parmetis"
@@ -234,6 +242,8 @@ SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx",
 approxSpace = ApproximationSpace(dom)
 
 cytVol = "cyt"
+measZones = "meas_head, meas_neck, meas_dend"
+cytVol = cytVol .. ", " .. measZones
 erVol = "er"
 plMem = "pm, syn"
 plMem_vec = {"pm", "syn"}
@@ -247,6 +257,7 @@ approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("m", "Lagrange", 1, plMem)
 
 approxSpace:init_levels()
 approxSpace:print_layout_statistic()
@@ -330,7 +341,27 @@ ncx:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 leakPM = Leak({"", "ca_cyt"})
 leakPM:set_constant(0, ca_ext)
 leakPM:set_scale_inputs({1e3,1e3})
-leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
+leakPM:set_scale_fluxes({1e15}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
+
+vdccMode = 0  -- 0 for script function voltage, 1 for data file voltage
+if vdccMode == 0 then
+	apSignal = ActionPotentialTrain(0.0, 0.02, 50, -70.0)
+	function membranePotential(x, y, z, t, si)
+		-- 80% of the intensity of the real AP
+		return 1e-3*(-70.0 + 0.8*(apSignal:membrane_potential(t) + 70.0))
+	end
+	vdcc = VDCC_BG_UserData({"ca_cyt", "", "m"}, plMem_vec, approxSpace)
+	vdcc:set_potential_function("membranePotential")
+elseif vdccMode == 1 then
+	vdcc = VDCC_BG_VM2UG({"ca_cyt", "", "m"}, plMem_vec, approxSpace,
+			"voltageData/vm_", "%.5f", ".dat", false)
+	vdcc:set_file_times(1e-5, 0.0) -- file interval is 0.01ms, starting at 0.0
+end
+vdcc:set_constant(1, ca_ext)
+vdcc:set_scale_inputs({1e3, 1e3, 1.0})
+vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+vdcc:set_channel_type_L()
+vdcc:init(0.0)
 
 
 discPMCA = MembraneTransportFV1(plMem, pmca)
@@ -340,14 +371,17 @@ discNCX = MembraneTransportFV1(plMem, ncx)
 discNCX:set_density_function(ncxDensity)
 
 discPMLeak = MembraneTransportFV1(plMem, leakPM)
-discPMLeak:set_density_function(1e9*leakPMconstant / (ca_ext - ca_cyt_init))
+discPMLeak:set_density_function(leakPMconstant / (1e3*(ca_ext - ca_cyt_init)))
+
+discVDCC = MembraneTransportFV1(plMem, vdcc)
+discVDCC:set_density_function(vdccDensity)
 
 
 -- synaptic activity
-synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", plMem)
+synapseInfluxCa = UserFluxBoundaryFV1("ca_cyt", "syn")
 synapseInfluxCa:set_flux_function("neumannBndCa")
 
-synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", plMem)
+synapseInfluxIP3 = UserFluxBoundaryFV1("ip3", "syn")
 synapseInfluxIP3:set_flux_function("neumannBndIP3")
 
 
@@ -366,7 +400,8 @@ domainDisc:add(elemDiscBuffering)
 domainDisc:add(discPMCA)
 domainDisc:add(discNCX)
 domainDisc:add(discPMLeak)
---domainDisc:add(discVDCC)
+domainDisc:add(discVDCC)
+domainDisc:add(vdcc)  -- for gating param discretization
 
 domainDisc:add(discIP3R)
 domainDisc:add(discRyR)
@@ -423,7 +458,7 @@ else -- (solverID == "GMG")
 	gmg:set_cycle_type(1)
 	gmg:set_num_presmooth(3)
 	gmg:set_num_postsmooth(3)
-	--gmg:set_rap(true) -- causes error in base solver!!
+	gmg:set_rap(true)
 	--gmg:set_debug(GridFunctionDebugWriter(approxSpace))
 	
     bcgs_steps = 1000
@@ -439,7 +474,7 @@ bicgstabSolver:set_convergence_check(convCheck)
 
 --- non-linear solver ---
 -- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-18, 1e-12)
+newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-18, 1e-08)
 --newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-12)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
@@ -464,6 +499,7 @@ Interpolate(ca_cyt_init, u, "ca_cyt", 0.0)
 Interpolate(ca_er_init, u, "ca_er", 0.0)
 Interpolate(ip3_init, u, "ip3", 0.0)
 Interpolate(clb_init, u, "clb", 0.0)
+vdcc:calculate_steady_state(u, -0.07)
 
 
 -- timestep in seconds
@@ -471,14 +507,14 @@ dt = timeStepStart
 time = 0.0
 step = 0
 
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
 	out:print(fileName .. "vtk/result", u, step, time)
 end
 
-take_measurement(u, time, "cyt", "ca_cyt, ip3, clb", fileName .. "meas/data")
-take_measurement(u, time, "er", "ca_er", fileName .. "meas/data")
+take_measurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
 
+compute_volume(approxSpace, "meas_head, meas_neck, syn")
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -490,7 +526,7 @@ solTimeSeries:push(uOld, time)
 min_dt = timeStep / math.pow(2,15)
 cb_interval = 10
 lv = startLv
-levelUpDelay = caEntryDuration;
+levelUpDelay = caEntryDuration
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do
@@ -537,8 +573,7 @@ while endTime-time > 0.001*dt do
 			end
 		end
 		
-		take_measurement(u, time, "cyt", "ca_cyt, ip3, clb", fileName .. "meas/data")
-		take_measurement(u, time, "er", "ca_er", fileName .. "meas/data")
+		take_measurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
