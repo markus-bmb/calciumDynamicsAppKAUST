@@ -162,7 +162,7 @@ function SERCAdensity(x,y,z,t,si)
 	local v_s = 6.5e-27						-- V_S param of SERCA pump
 	local k_s = 1.8e-7						-- K_S param of SERCA pump
 	if (IP3RON == 1) then j_ip3r = 3.76061941665206046e-23 else j_ip3r = 0.0 end -- single channel IP3R flux (mol/s) - to be determined via gdb
-	if (RyRON == 1) then j_ryr = 1.12010156334666959203e-21 else j_ryr = 0.0 end -- single channel RyR flux (mol/s) - to be determined via gdb ryr2
+	if (RyRON == 1) then j_ryr = 1.12010156334666959203e-21 else j_ryr = 0.0 end -- single channel RyR flux (mol/s) - to be determined via gdb RyRinstat
 --	local j_ryr = 0.0--1.1204582669024472e-21 -- single channel RyR flux (mol/s) - to be determined via gdb
 	local j_leak = ca_er_init-ca_cyt_init	-- leak proportionality factor
 	
@@ -412,7 +412,7 @@ ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 --ryr = RyR("ca_cyt, ca_er")
-ryr = RyR2("ca_cyt, ca_er", "mem_er, mem_app", approxSpace)
+ryr = RyRinstat("ca_cyt, ca_er", "mem_er, mem_app", approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 

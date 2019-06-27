@@ -494,7 +494,7 @@ ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 ryr = RyR({"ca_cyt", "ca_er"})
---ryr = RyR2({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
+--ryr = RyRinstat({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
 ryr:set_scale_inputs({1e3,1e3})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
