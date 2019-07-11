@@ -14,7 +14,7 @@ SetOutputProfileStats(false)
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
-AssertPluginsLoaded({"neuro_collection", "MembranePotentialMapping"})
+AssertPluginsLoaded({"neuro_collection"})
 
 -- choose dimension and algebra
 InitUG(3, AlgebraType("CPU", 1));
@@ -161,7 +161,7 @@ function neumannBndCa(x, y, z, t, si)
 	
 	-- single spike
 	if t <= caEntryDuration then
-		influx = 0.04 * (1.0 - t/caEntryDuration)
+		influx = 0.0059 * (1.0 - t/caEntryDuration)
 	else
 		influx = 0.0
 	end
@@ -175,7 +175,7 @@ ip3EntryDelay = 0.000
 ip3EntryDuration = 0.2
 function neumannBndIP3(x, y, z, t, si)
 	if synStartTime+ip3EntryDelay < t and t <= synStartTime+ip3EntryDelay+ip3EntryDuration then
-		influx = 2e-3 * (1.0 - t/ip3EntryDuration)
+		influx = 3e-4 * (1.0 - t/ip3EntryDuration)
 	else
 		influx = 0.0
 	end
@@ -253,8 +253,8 @@ erMemVec = {"erm"}
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
 
-approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
+approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("m", "Lagrange", 1, plMem)
