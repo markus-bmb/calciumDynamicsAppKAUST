@@ -22,12 +22,12 @@ ug_load_script("util/load_balancing_util.lua")
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
 dim = 3
-InitUG(dim, AlgebraType("CPU", 1));
+InitUG(dim, AlgebraType("CPU", 1))
 
 
 -- choice of grid and refinement level
-gridName1d = util.GetParam("-grid1d", "../apps/cable_neuron_app/grids/NMO_05371_1d.ugx")
-gridName3d = util.GetParam("-grid3d", "../apps/cable_neuron_app/grids/NMO_05371_3d_6.ugx")
+gridName1d = util.GetParam("-grid1d", "testNetwork120.ugx")
+gridName3d = util.GetParam("-grid3d", "testNetwork120_n113_3d_noAxon.ugx")
 numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- parameters for instationary simulation
@@ -159,9 +159,9 @@ if withIons == true then
 	approxSpace1d:add_fct("ca", "Lagrange", 1)
 end
 
-approxSpace1d:init_levels();
-approxSpace1d:init_surfaces();
-approxSpace1d:init_top_surface();
+approxSpace1d:init_levels()
+approxSpace1d:init_surfaces()
+approxSpace1d:init_top_surface()
 approxSpace1d:print_layout_statistic()
 approxSpace1d:print_statistic()
 
