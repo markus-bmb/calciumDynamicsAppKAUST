@@ -333,7 +333,7 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 -- setup 3d approximation space --
 ----------------------------------
 
-InitUG(3, AlgebraType("CPU", 4))
+InitUG(3, AlgebraType("CPU", 1))
 
 -- create, load, refine and distribute domain
 reqSubsets = {"cyt", "er", "pm", "erm"}

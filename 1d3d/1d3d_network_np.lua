@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
--- This script sets up a simple test for a 1d/3d hybrid simulation with a     --
--- single cell in the 1d "network" that is also resolved in 3d.               --
+-- This script sets up a 1d/3d hybrid simulation with a 1d network and the 3d --
+-- representation of one of the network cells (using NeuriteProjector).       --
 -- On the 1d domain, it solves the cable equation with HH channels,           --
 -- activating specifically set synapses. On the 3d domain, it solves a        --
 -- calcium problem (diffusion and buffering) with channels and pumps in the   --
@@ -9,46 +9,33 @@
 -- whose membrane pumps and channels cause calcium exchange with the cytosol. --
 --                                                                            --
 -- Author: Markus Breit                                                       --
--- Date:   2017-02-23                                                         --
+-- Date:   2019-03-12                                                         --
 --------------------------------------------------------------------------------
-
--- for profiler output
-SetOutputProfileStats(false)
 
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
-AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
+AssertPluginsLoaded({"cable_neuron", "neuro_collection", "Parmetis"})
 
-dim = 3
-InitUG(dim, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 
--- choice of grid and refinement level
-gridName1d = util.GetParam("-grid1d", "../apps/calciumDynamics_app/grids/smith_1d.ugx")
-gridName3d = util.GetParam("-grid3d", "../apps/calciumDynamics_app/grids/smith_3d_farSyns.ugx")
-numRefs = util.GetParamNumber("-numRefs", 0)
-gridSyn = string.sub(gridName1d, 1, string.len(gridName1d) - 4) .. "_syns.ugx" 
+-- choice of grids
+gridName1d = util.GetParam("-grid1d", "calciumDynamics_app/grids/nc120.ugx")
+gridName3d = util.GetParam("-grid3d", "calciumDynamics_app/grids/nc120_113_test.swc")
+
+-- refinement level 3d
+numAxialRefs = util.GetParamNumber("-numAxialRefs", 0)
+numGlobRefs = util.GetParamNumber("-numGlobRefs", 0)
+numERMRefs = util.GetParamNumber("-numERMRefs", 0)
 
 -- parameters for instationary simulation
 dt1d = util.GetParamNumber("-dt1d", 1e-5) -- in s
 dt3d = util.GetParamNumber("-dt3d", 1e-2) -- in s
-dt3dStart = util.GetParamNumber("-dt3dstart", dt3d)
 endTime = util.GetParamNumber("-endTime", 1.0)  -- in s
 
 -- with simulation of single ion concentrations?
 withIons = util.HasParamOption("-ions")
-
--- choice of solver setup
-solverID = util.GetParam("-solver", "GMG")
-solverID = string.upper(solverID)
-validSolverIDs = {}
-validSolverIDs["GMG"] = 0;
-validSolverIDs["GS"] = 0;
-validSolverIDs["ILU"] = 0;
-if (validSolverIDs[solverID] == nil) then
-    error("Unknown solver identifier " .. solverID)
-end
 
 -- specify "-verbose" to output linear solver convergence
 verbose1d = util.HasParamOption("-verbose1d")
@@ -59,117 +46,31 @@ generateVTKoutput = util.HasParamOption("-vtk")
 pstep = util.GetParamNumber("-pstep", dt3d, "plotting interval")
 
 -- file handling
-filename = util.GetParam("-outName", "hybrid_test")
-filename = filename.."/"
+outPath = util.GetParam("-outName", "hybrid_test")
+outPath = outPath.."/"
 
+-- profiling?
+doProfiling = util.HasParamOption("-profile")
+SetOutputProfileStats(doProfiling)
 
--- choose length of time step at the beginning
--- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
-function log2(x)
-	return math.log(x) / math.log(2)
-end
-startLv =  math.ceil(log2(dt3d / dt3dStart))
-dt3dStartNew = dt3d / math.pow(2, startLv)
-if (math.abs(dt3dStartNew - dt3dStart) / dt3dStart > 1e-5) then 
-	print("dt3dStart argument ("..dt3dStart..") was not admissible; taking "..dt3dStartNew.." instead.")
-end
-dt3dStart = dt3dStartNew
+-- debugging
+debug = util.HasParamOption("-debug")
 
 
 print("Chosen parameters:")
-print("    grid       = " .. gridName1d)
-print("    numRefs    = " .. numRefs)
-print("    dt1d       = " .. dt1d)
-print("    dt3d       = " .. dt3d)
-print("    dt3dStart  = " .. dt3dStart)
-print("    endTime    = " .. endTime)
-print("    pstep      = " .. pstep)
-print("    ions       = " .. tostring(withIons))
-print("    solver     = " .. solverID)
-print("    verbose1d  = " .. tostring(verbose1d))
-print("    verbose3d  = " .. tostring(verbose3d))
-print("    vtk        = " .. tostring(generateVTKoutput))
-print("    outname    = " .. filename)
-
-------------------
--- set synapses --
-------------------
--- firing pattern of the synapse
-syn_onset = {0.0, 0.0, 0.0, 0.0, 0.0}
-syn_tau = 4e-4
-syn_gMax = 1.2e-9
-syn_revPot = 0.0
-
-function file_exists(name)
-	local f = io.open(name,"r")
-	if f ~= nil then io.close(f) return true else return false end
-end
-
--- check if grid version with synapses already exists
--- if so, just use it, otherwise, create it
-if not file_exists(gridSyn) then
-	-- synapse distributor only works in serial mode
-	if NumProcs() > 1 then
-		print("Cannot use SynapseDistributor in parallel atm. Please create synapse geometry in serial.")
-		exit()
-	end
-	
-	-- use synapse distributor to place synapses on the grid
-	synDistr = SynapseDistributor(gridName1d)
-
-	syn1 = AlphaSynapsePair()
-	syn1:set_id(0)
-	syn1:set_onset(syn_onset[1])
-	syn1:set_tau(syn_tau)                   -- default value
-	syn1:set_gMax(syn_gMax)                 -- default value
-	syn1:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-19.9609e-6, 43.9832e-6, 5.82852e-6}, syn1:pre_synapse(), syn1:post_synapse())
-	synDistr:place_synapse_at_coords({-42.1714-6, 133.237e-6, 24.8023e-6}, syn1:pre_synapse(), syn1:post_synapse())
-	
-	syn2 = AlphaSynapsePair()
-	syn2:set_id(1)
-	syn2:set_onset(syn_onset[2])
-	syn2:set_tau(syn_tau)                   -- default value
-	syn2:set_gMax(syn_gMax)                 -- default value
-	syn2:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-18.5196e-6, 40.3637e-6, 5.8769e-6}, syn2:pre_synapse(), syn2:post_synapse())
-	synDistr:place_synapse_at_coords({-40.7199e-6, 130.633e-6, 23.3533e-6}, syn2:pre_synapse(), syn2:post_synapse())
-	
-	syn3 = AlphaSynapsePair()
-	syn3:set_id(2)
-	syn3:set_onset(syn_onset[3])
-	syn3:set_tau(syn_tau)                   -- default value
-	syn3:set_gMax(syn_gMax)                 -- default value
-	syn3:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-18.6295e-6, 35.8769e-6, 5.87629e-6}, syn3:pre_synapse(), syn3:post_synapse())
-	synDistr:place_synapse_at_coords({-40.6288e-6, 126.593e-6, 22.5147e-6}, syn3:pre_synapse(), syn3:post_synapse())
-	
-	syn4 = AlphaSynapsePair()
-	syn4:set_id(3)
-	syn4:set_onset(syn_onset[4])
-	syn4:set_tau(syn_tau)                   -- default value
-	syn4:set_gMax(syn_gMax)                 -- default value
-	syn4:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-19.53e-6, 32.1163e-6, 5.87559e-6}, syn4:pre_synapse(), syn4:post_synapse())
-	synDistr:place_synapse_at_coords({-42.0221e-6, 123.26e-6, 21.9985e-6}, syn4:pre_synapse(), syn4:post_synapse())
-	
-	syn5 = AlphaSynapsePair()
-	syn5:set_id(4)
-	syn5:set_onset(syn_onset[5])
-	syn5:set_tau(syn_tau)                   -- default value
-	syn5:set_gMax(syn_gMax)                 -- default value
-	syn5:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-20.7218e-6, 28.1453e-6, 5.93687e-6}, syn5:pre_synapse(), syn5:post_synapse())
-	synDistr:place_synapse_at_coords({-42.8684e-6, 119.663e-6, 21.1337e-6}, syn5:pre_synapse(), syn5:post_synapse())
-	
-	exportSuccess = synDistr:export_grid(gridSyn)
-	if not exportSuccess then
-	    print("Synapse distributor failed to export its grid to '" .. gridSyn .. "'.")
-	    exit()
-	end
-end
-
-gridName1d = gridSyn
+print("    grid1d       = " .. gridName1d)
+print("    grid3d       = " .. gridName3d)
+print("    numAxialRefs = " .. numAxialRefs)
+print("    numGlobRefs  = " .. numGlobRefs)
+print("    dt1d         = " .. dt1d)
+print("    dt3d         = " .. dt3d)
+print("    endTime      = " .. endTime)
+print("    pstep        = " .. pstep)
+print("    ions         = " .. tostring(withIons))
+print("    verbose1d    = " .. tostring(verbose1d))
+print("    verbose3d    = " .. tostring(verbose3d))
+print("    vtk          = " .. tostring(generateVTKoutput))
+print("    outname      = " .. outPath)
 
 
 --------------------------
@@ -225,10 +126,10 @@ diff_ca	= 2.2e-10
 temp = 37.0
 
 
-------------------------------------
+---------------------------------------
 -- create 1d domain and approx space --
-------------------------------------
-neededSubsets1d = {"soma", "dendrite"} --, "axon"}
+---------------------------------------
+neededSubsets1d = {}
 dom1d = util.CreateDomain(gridName1d, 0, neededSubsets1d)
 
 approxSpace1d = ApproximationSpace(dom1d)
@@ -239,21 +140,20 @@ if withIons == true then
 	approxSpace1d:add_fct("ca", "Lagrange", 1)
 end
 
-approxSpace1d:init_levels();
-approxSpace1d:init_surfaces();
-approxSpace1d:init_top_surface();
-approxSpace1d:print_layout_statistic()
+approxSpace1d:init_levels()
+approxSpace1d:init_surfaces()
+approxSpace1d:init_top_surface()
 approxSpace1d:print_statistic()
 
-OrderCuthillMcKee(approxSpace1d, true);
-
----------------------------
+------------------------------
 -- create 1d discretization --
----------------------------
-allSubsets = "soma, dendrite" --, axon"
-
+------------------------------
+ss_axon = "AXON__L4_STELLATE, AXON__L23_PYRAMIDAL, AXON__L5A_PYRAMIDAL, AXON__L5B_PYRAMIDAL"
+ss_dend = "DEND__L4_STELLATE, DEND__L23_PYRAMIDAL, DEND__L5A_PYRAMIDAL, DEND__L5B_PYRAMIDAL"
+ss_soma = "SOMA__L4_STELLATE, SOMA__L23_PYRAMIDAL, SOMA__L5A_PYRAMIDAL, SOMA__L5B_PYRAMIDAL"
+	
 -- cable equation
-CE = CableEquation(allSubsets, withIons)
+CE = CableEquation(ss_axon..", "..ss_dend..", "..ss_soma, withIons)
 CE:set_spec_cap(spec_cap)
 CE:set_spec_res(spec_res)
 CE:set_rev_pot_k(e_k)
@@ -266,15 +166,14 @@ CE:set_diff_coeffs({diff_k, diff_na, diff_ca})
 CE:set_temperature_celsius(temp)
 
 -- Hodgkin and Huxley channels
---HH = ChannelHHNernst("v, k, na", "axon")
 if withIons == true then
-	HH = ChannelHHNernst("v", allSubsets)
+	HH = ChannelHHNernst("v", ss_axon..", "..ss_dend..", "..ss_soma)
 else
-	HH = ChannelHH("v", allSubsets)
+	HH = ChannelHH("v", ss_axon..", "..ss_dend..", "..ss_soma)
 end
---HH:set_conductances(g_k_ax, g_na_ax, "axon")
-HH:set_conductances(g_k_so, g_na_so, "soma")
-HH:set_conductances(g_k_de, g_na_de, "dendrite")
+HH:set_conductances(g_k_ax, g_na_ax, ss_axon)
+HH:set_conductances(g_k_so, g_na_so, ss_soma)
+HH:set_conductances(g_k_de, g_na_de, ss_dend)
 
 CE:add(HH)
 
@@ -282,13 +181,13 @@ CE:add(HH)
 -- leakage
 tmp_fct = math.pow(2.3,(temp-23.0)/10.0)
 
-leak = ChannelLeak("v", allSubsets)
---leak:set_cond(g_l_ax*tmp_fct, "axon")
---leak:set_rev_pot(-0.066148458, "axon")
-leak:set_cond(g_l_so*tmp_fct, "soma")
-leak:set_rev_pot(-0.030654022, "soma")
-leak:set_cond(g_l_de*tmp_fct, "dendrite")
-leak:set_rev_pot(-0.057803624, "dendrite")
+leak = ChannelLeak("v", ss_axon..", "..ss_dend..", "..ss_soma)
+leak:set_cond(g_l_ax*tmp_fct, ss_axon)
+leak:set_rev_pot(-0.066148458, ss_axon)
+leak:set_cond(g_l_so*tmp_fct, ss_soma)
+leak:set_rev_pot(-0.030654022, ss_soma)
+leak:set_cond(g_l_de*tmp_fct, ss_dend)
+leak:set_rev_pot(-0.057803624, ss_dend)
 
 CE:add(leak)
 
@@ -303,7 +202,49 @@ CE:set_synapse_handler(syn_handler)
 domDisc1d = DomainDiscretization(approxSpace1d)
 domDisc1d:add(CE)
 
+----------------------------
+-- 1d domain distribution --
+----------------------------
+-- Domain distribution needs to be performed AFTER addition
+-- of the synapse handler to the CE object and addition of the
+-- CE object to the domain disc (i.e.: when the synapse handler
+-- has got access to the grid).
+-- The reason is that the synapse handler needs access to the grid
+-- to correctly distribute the synapse* attachments.
+balancer.partitioner = "parmetis"
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl = 0
+balancer.firstDistProcs = 120
 
+loadBalancer1d = balancer.CreateLoadBalancer(dom1d)
+if loadBalancer1d ~= nil then
+	loadBalancer1d:enable_vertical_interface_creation(false)
+	cdgm = ClusteredDualGraphManager1d()
+	cnu = CableNeuronUnificator()
+    cdgm:add_unificator(cnu)
+	balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+	balancer.qualityRecordName = "coarse"
+	balancer.Rebalance(dom1d, loadBalancer1d)
+	
+	edgeCut = balancer.defaultPartitioner:edge_cut_on_lvl(0)
+	if edgeCut ~= 0 then
+		print("Network is not partitioned into whole cells.")
+		print("Edge cut on base level: " .. edgeCut)
+	end
+	
+	loadBalancer1d:estimate_distribution_quality()
+	loadBalancer1d:print_quality_records()
+end
+
+--SaveParallelGridLayout(dom1d:grid(), outPath .. "grid/parallel_grid1d_layout_p"..ProcRank()..".ugx", 0)
+--SaveGridHierarchyTransformed(dom1d:grid(), dom1d:subset_handler(), outPath .. "grid/refined_grid1d_p" .. ProcRank() .. ".ugx", 0)
+
+-- ordering; needs to be done after distribution!
+order_cuthillmckee(approxSpace1d)
+
+-- find neuron IDs for 3d simulation
+nid = innermost_neuron_id_in_subset("SOMA__L5A_PYRAMIDAL", dom1d:subset_handler())
+print("Innermost neuron ID: "..nid)
 
 
 ----------------------------------
@@ -311,7 +252,7 @@ domDisc1d:add(CE)
 ----------------------------------
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
-totalClb = 4*40.0e-6
+totalClb = 4*2.5e-6
 
 -- diffusion coefficients
 D_cac = 220.0
@@ -329,7 +270,6 @@ ca_er_init = 2.5e-4
 ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
 
-
 -- IP3 constants
 reactionRateIP3 = 0.11
 equilibriumIP3 = 4.0e-08
@@ -337,12 +277,12 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- ER densities
 IP3Rdensity = 17.3
-RYRdensity = 0.86
+RYRdensity = 4.0
 leakERconstant = 3.8e-17
 local v_s = 6.5e-27  -- V_S param of SERCA pump
 local k_s = 1.8e-7   -- K_S param of SERCA pump
 SERCAfluxDensity =   IP3Rdensity * 3.7606194166520605e-23        -- j_ip3r
-			       + RYRdensity * 1.1204582669024472e-21       -- j_ryr
+			       + RYRdensity * 1.1201015633466695e-21       -- j_ryr
 			       + leakERconstant * (ca_er_init-ca_cyt_init) -- j_leak
 SERCAdensity = SERCAfluxDensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
 if (SERCAdensity < 0) then error("SERCA flux density is outward for these density settings!") end
@@ -353,83 +293,80 @@ ncxDensity  = 15.0
 vdccDensity = 1.0
 leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s)
 				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s)
-				+ vdccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
-				-- *1.5 // * 0.5 for L-type // T-type
+				+ vdccDensity * (-7.475181280912817137e-28)    -- single channel VDCC flux (mol/s)
 if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
 
 ----------------------------------
 -- setup 3d approximation space --
 ----------------------------------
--- create, load, refine and distribute domain
-reqSubsets = {"cyt", "er", "pm", "erm", "syn1", "syn2", "syn3", "syn4", "syn5"}
-dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
-balancer.partitioner = "parmetis"
+-- create domain
+if ProcRank() == 0 then
+	import_er_neurites_from_swc(gridName3d, outPath.."grid/neuron.ugx", 0.25, 32, 0)
+end
+dom3d = Domain()
+dom3d:create_additional_subset_handler("projSH")
+LoadDomain(dom3d, outPath.."grid/neuron.ugx")
 
--- protect ER membrane from being cut by partitioning
-balancer.staticProcHierarchy = true
-balancer.firstDistLvl = -1
-balancer.redistSteps = 0
-
-balancer.ParseParameters()
-balancer.PrintParameters()
+reqSubsets = {"cyt", "er", "pm", "erm"}
+ug_assert(util.CheckSubsets(dom3d, reqSubsets), "Something wrong with required subsets.")
 
 -- in parallel environments: use a load balancer to distribute the grid
--- actual refinement and load balancing after setup of disc.
-loadBalancer = balancer.CreateLoadBalancer(dom3d)
+balancer.partitioner = "parmetis"
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl = 0
+balancer.firstDistProcs = 48
+balancer.redistSteps = 2
+balancer.redistProcs = 4
+balancer.imbalanceFactor = 1.05
+balancer.qualityRedist = true
+balancer.qualityThreshold = 0.85
 
--- refining and distributing
--- manual refinement (need to update interface node location in each step)
-if loadBalancer ~= nil then
-	loadBalancer:enable_vertical_interface_creation(false)
-	if balancer.partitioner == "parmetis" then
-		mu = ManifoldUnificator(dom3d)
-		mu:add_protectable_subsets("erm")
-		cdgm = ClusteredDualGraphManager()
-		cdgm:add_unificator(SiblingUnificator())
-		cdgm:add_unificator(mu)
-		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+axialMarker = NeuriteAxialRefinementMarker(dom3d)
+
+loadBalancer3d = balancer.CreateLoadBalancer(dom3d)
+if loadBalancer3d ~= nil then
+	mu = ManifoldUnificator(dom3d)
+	mu:add_protectable_subsets("erm")
+	au = AnisotropyUnificator(dom3d)
+	au:set_threshold_ratio(0.2)
+	cdgm = ClusteredDualGraphManager()
+	cdgm:add_unificator(SiblingUnificator())
+	cdgm:add_unificator(mu)
+	cdgm:add_unificator(au)
+	cdgm:add_unificator(axialMarker)
+	balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+	balancer.qualityRecordName = "coarse"
+	balancer.Rebalance(dom3d, loadBalancer3d)
+end
+
+
+-- refinement (axial)
+refiner = HangingNodeDomainRefiner(dom3d)
+for i = 1, numAxialRefs do
+	print("axial refinement " .. i)
+	axialMarker:mark(refiner)
+	refiner:refine()
+	
+	if loadBalancer3d ~= nil then
+		balancer.qualityRecordName = "axial "..i
+		balancer.Rebalance(dom3d, loadBalancer3d)
 	end
-	balancer.Rebalance(dom3d, loadBalancer)
 end
-
--- refining and distributing
--- manual refinement (need to update interface node location in each step)
-if loadBalancer ~= nil then
-	balancer.Rebalance(dom3d, loadBalancer)
+if loadBalancer3d ~= nil then
+	cdgm:remove_unificator(axialMarker)
 end
-
-if numRefs > 0 then	
-	refiner = GlobalDomainRefiner(dom3d)	
-	for i = 1, numRefs do
-		refiner:refine()
-	end
-end
-
-if loadBalancer ~= nil then
-	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
-	loadBalancer:estimate_distribution_quality()
-	loadBalancer:print_quality_records()
-end
-print(dom3d:domain_info():to_string())
-
-
---[[
---print("Saving domain grid and hierarchy.")
-SaveDomain(dom3d, "refined_grid_p" .. ProcRank() .. ".ugx")
-SaveGridHierarchyTransformed(dom3d:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
-print("Saving parallel grid layout")
-SaveParallelGridLayout(dom3d:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
---]]
+delete(axialMarker)
 
 -- create approximation space
 approxSpace3d = ApproximationSpace(dom3d)
 
 cytVol = "cyt"
 erVol = "er"
-plMem = "pm, syn1, syn2, syn3, syn4, syn5"
-plMem_vec = {"pm", "syn1", "syn2", "syn3", "syn4", "syn5"}
+plMem = "pm"
+plMem_vec = {"pm"}
 erMem = "erm"
+erMemVec = {"erm"}
 
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem 
@@ -438,12 +375,63 @@ approxSpace3d:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace3d:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace3d:add_fct("clb", "Lagrange", 1, outerDomain)
 approxSpace3d:add_fct("ip3", "Lagrange", 1, outerDomain)
+approxSpace3d:add_fct("o2", "Lagrange", 1, erMem)
+approxSpace3d:add_fct("c1", "Lagrange", 1, erMem)
+approxSpace3d:add_fct("c2", "Lagrange", 1, erMem)
+approxSpace3d:add_fct("m", "Lagrange", 1, plMem)
 
-approxSpace3d:init_levels();
-approxSpace3d:init_surfaces();
-approxSpace3d:init_top_surface();
-approxSpace3d:print_layout_statistic()
+approxSpace3d:init_levels()
+approxSpace3d:init_surfaces()
+approxSpace3d:init_top_surface()
+
+
+-- ERM refinements
+strat = SurfaceMarking(dom3d)
+strat:add_surface("erm", "cyt")
+for i = 1, numERMRefs do
+	print("ER membrane refinement " .. i)
+	strat:mark_without_error(refiner, approxSpace3d)
+	refiner:refine()
+	
+	if loadBalancer3d ~= nil then
+		balancer.qualityRecordName = "ER mem "..i
+		balancer.Rebalance(dom3d, loadBalancer3d)
+	end
+end
+
+-- global refinements
+for i = 1, numGlobRefs do
+	print("global refinement " .. i)
+	mark_global(refiner, dom3d)
+	refiner:refine()
+
+	if loadBalancer3d ~= nil then
+		balancer.qualityRecordName = "global "..i
+		balancer.Rebalance(dom3d, loadBalancer3d)
+	end
+end
+
+delete(refiner)
+
+
 approxSpace3d:print_statistic()
+
+if loadBalancer3d ~= nil then
+	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
+	loadBalancer3d:estimate_distribution_quality()
+	loadBalancer3d:print_quality_records()
+end
+
+approxSpace3d:print_statistic()
+print(dom3d:domain_info():to_string())
+
+---[[
+--print("Saving domain grid and hierarchy.")
+--SaveDomain(dom3d, "refined_grid_p" .. ProcRank() .. ".ugx")
+SaveGridHierarchyTransformed(dom3d:grid(), dom3d:subset_handler(), outPath.."grid/refined_grid_p" .. ProcRank() .. ".ugx", 5.0)
+--SaveParallelGridLayout(dom3d:grid(), outPath.."grid/parallel_grid3d_layout_p"..ProcRank()..".ugx", 2.0)
+--]]
+
 
 --------------------------
 -- setup discretization --
@@ -479,9 +467,11 @@ ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
 ip3r:set_scale_inputs({1e3,1e3,1e3})
 ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
-ryr = RyR({"ca_cyt", "ca_er"})
---ryr = RyRinstat({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
-ryr:set_scale_inputs({1e3,1e3})
+--ryr = RyR({"ca_cyt", "ca_er"})
+--ryr:set_scale_inputs({1e3,1e3})
+--ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
+ryr = RyRImplicit({"ca_cyt", "ca_er", "o2", "c1", "c2"}, erMemVec)
+ryr:set_scale_inputs({1e3, 1e3, 1.0, 1.0, 1.0})
 ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 
 serca = SERCA({"ca_cyt", "ca_er"})
@@ -522,9 +512,10 @@ leakPM:set_constant(0, 1.0)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
-vdcc = VDCC_BG_CN({"ca_cyt", ""}, plMem_vec, approxSpace1d, approxSpace3d, "v")
+vdcc = VDCC_BG_CN({"ca_cyt", "", "m"}, plMem_vec, approxSpace1d, approxSpace3d, "v")
 vdcc:set_domain_disc_1d(domDisc1d)
 vdcc:set_cable_disc(CE)
+vdcc:set_3d_neuron_ids({nid})
 vdcc:set_coordinate_scale_factor_3d_to_1d(1e-6)
 if withIons then
 	vdcc:set_initial_values({v_eq, k_in, na_in, ca_in})
@@ -533,12 +524,14 @@ else
 end
 vdcc:set_time_steps_for_simulation_and_potential_update(dt1d, dt1d)
 vdcc:set_solver_output_verbose(verbose1d)
-vdcc:set_vtk_output(filename.."vtk/solution1d", pstep)
-vdcc:set_constant(1, 1.5)
-vdcc:set_scale_inputs({1e3,1.0})
+if generateVTKoutput then
+	vdcc:set_vtk_output(outPath.."vtk/solution1d", pstep)
+end
+vdcc:set_constant(1, 1.0)
+vdcc:set_scale_inputs({1e3, 1.0, 1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-vdcc:set_channel_type_L() --default, but to be sure
-vdcc:init(0.0)
+vdcc:set_channel_type_L() -- default, but to be sure
+
 
 discPMCA = MembraneTransportFV1(plMem, pmca)
 discPMCA:set_density_function(pmcaDensity)
@@ -553,13 +546,13 @@ discVDCC = MembraneTransportFV1(plMem, vdcc)
 discVDCC:set_density_function(vdccDensity)
 
 
+-- synaptic activity --
 synapseInflux = HybridSynapseCurrentAssembler(approxSpace3d, approxSpace1d, syn_handler, {"pm"}, "ca_cyt", "ip3")
 synapseInflux:set_current_percentage(0.01)
-synapseInflux:set_3d_neuron_ids({0})
+synapseInflux:set_3d_neuron_ids({nid})
 synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
 synapseInflux:set_valency(2)
-synapseInflux:set_ip3_production_params(6e-20, 1.188)
-
+synapseInflux:set_ip3_production_params(6e-20, 1.188)--6e-19, 1.188)
 
 
 -- domain discretization --
@@ -574,6 +567,7 @@ domDisc3d:add(discBuffer)
 
 domDisc3d:add(discIP3R)
 domDisc3d:add(discRyR)
+domDisc3d:add(ryr) -- also add ryr as elem disc (for state variables)
 domDisc3d:add(discSERCA)
 domDisc3d:add(discERLeak)
 
@@ -581,8 +575,16 @@ domDisc3d:add(discPMCA)
 domDisc3d:add(discNCX)
 domDisc3d:add(discPMLeak)
 domDisc3d:add(discVDCC)
+domDisc3d:add(vdcc) -- also add vdcc as elem disc (for state variables)
 
 domDisc3d:add(synapseInflux)
+
+-- constraints for adaptivity
+if numERMRefs > 0 then
+	hangingConstraint = SymP1Constraints()
+	domDisc3d:add(hangingConstraint)
+end
+
 
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domDisc3d)
@@ -599,66 +601,68 @@ op:init()
 ------------------
 -- debug writer
 dbgWriter = GridFunctionDebugWriter(approxSpace3d)
-dbgWriter:set_base_dir(filename)
+dbgWriter:set_base_dir(outPath)
 dbgWriter:set_vtk_output(false)
 
--- biCGstab --
+-- StdConvCheck leads to deadlocks when a proc has lower-level elems, but not surface!
+--[[
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-50)
-convCheck:set_reduction(1e-8)
+convCheck:set_reduction(1e-6)
 convCheck:set_verbose(verbose3d)
+--]]
+convCheck = CompositeConvCheck(approxSpace3d, 50, 1e-20, 1e-06)
+convCheck:set_group_check("ca_cyt, ca_er, clb, ip3", 1e-20, 1e-06)
+convCheck:set_group_check("o2, c1, c2, m", 1e-16, 1e-06)
+--convCheck:set_component_check("ca_cyt, ca_er, clb, ip3, o2, c1, c2, m", 1e-50, 1e-06)
+convCheck:set_verbose(verbose3d)
+convCheck:set_adaptive(true)
 
-if (solverID == "ILU") then
-    bcgs_steps = 10000
-    ilu = ILU()
-    ilu:set_sort(true)
-    bcgs_precond = ilu
-elseif (solverID == "GS") then
-    bcgs_steps = 10000
-    bcgs_precond = GaussSeidel()
-else -- (solverID == "GMG")
-	gmg = GeometricMultiGrid(approxSpace3d)
-	gmg:set_discretization(timeDisc)
-	gmg:set_base_level(0)
-	gmg:set_gathered_base_solver_if_ambiguous(true)
-	
-	-- treat SuperLU problems with Dirichlet constraints by using constrained version
-	gmg:set_base_solver(SuperLU())
-	
-	ilu_gmg = ILU()
-	ilu_gmg:set_sort(true)		-- <-- SUPER-important!
-	gmg:set_smoother(ilu_gmg)
-	gmg:set_smooth_on_surface_rim(true)
-	gmg:set_cycle_type(1)
-	gmg:set_num_presmooth(3)
-	gmg:set_num_postsmooth(3)
-	--gmg:set_rap(true) -- causes error in base solver!!
-	--gmg:set_debug(GridFunctionDebugWriter(approxSpace))
-	
-    bcgs_steps = 1000
-	bcgs_precond = gmg
+gmg = GeometricMultiGrid(approxSpace3d)
+gmg:set_discretization(timeDisc)
+gmg:set_base_level(0)
+gmg:set_gathered_base_solver_if_ambiguous(true)
+
+-- treat SuperLU problems with Dirichlet constraints by using constrained version
+gmg:set_base_solver(SuperLU())
+
+smoother = ILU() --GaussSeidel()
+--smoother:enable_consistent_interfaces(true)
+--smoother:enable_overlap(true)
+--smoother:set_sort(true)
+gmg:set_smoother(smoother)
+gmg:set_smooth_on_surface_rim(true)
+gmg:set_cycle_type(1)
+gmg:set_num_presmooth(2)
+gmg:set_num_postsmooth(2)
+gmg:set_rap(true)
+if debug then
+	gmg:set_debug(dbgWriter)
 end
 
-convCheck:set_maximum_steps(bcgs_steps)
-
-bicgstabSolver = BiCGStab()
-bicgstabSolver:set_preconditioner(bcgs_precond)
-bicgstabSolver:set_convergence_check(convCheck)
---bicgstabSolver:set_debug(dbgWriter)
+linearSolver = BiCGStab()
+linearSolver:set_preconditioner(gmg)
+linearSolver:set_convergence_check(convCheck)
+if debug then
+	linearSolver:set_debug(dbgWriter)
+end
 
 --- non-linear solver ---
 -- convergence check
-newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 1e-18, 1e-12)
---newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-12)
+newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 5e-18, 1e-08)
+newtonConvCheck:set_group_check("ca_cyt, ca_er, clb, ip3", 5e-18, 1e-08)
+newtonConvCheck:set_group_check("o2, c1, c2, m", 1e-12, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
---newtonConvCheck:set_adaptive(true)
+newtonConvCheck:set_adaptive(true)
 
 -- Newton solver
 newtonSolver = NewtonSolver()
-newtonSolver:set_linear_solver(bicgstabSolver)
+newtonSolver:set_linear_solver(linearSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
---newtonSolver:set_debug(dbgWriter)
+--if debug then
+--	newtonSolver:set_debug(dbgWriter)
+--end
 
 newtonSolver:init(op)
 
@@ -668,23 +672,33 @@ newtonSolver:init(op)
 -------------
 -- get grid function
 u = GridFunction(approxSpace3d)
+u:set(0.0)
 
 -- set initial value
 InterpolateInner(ca_cyt_init, u, "ca_cyt", 0.0)
 InterpolateInner(ca_er_init, u, "ca_er", 0.0)
 InterpolateInner(clb_init, u, "clb", 0.0)
 InterpolateInner(ip3_init, u, "ip3", 0.0)
+ryr:calculate_steady_state(u)
+vdcc:calculate_steady_state(u, v_eq)
 
 -- timestep in seconds
-dt = dt3dStart
+dt = dt3d
 time = 0.0
 step = 0
 
 -- initial vtk output
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
-	out:print(filename .. "vtk/solution3d", u, step, time)
+	out:print(outPath .. "vtk/solution3d", u, step, time)
+	out:write_time_pvd(outPath .. "vtk/solution3d", u)
 end
+
+-- prepare memory measurement file
+if ProcRank() == 0 then
+	memMeasFile = assert(io.open(outPath .. "meas/memory.dat", "a"))
+end
+mi = MemInfo()
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -695,12 +709,24 @@ solTimeSeries:push(uOld, time)
 
 min_dt = dt3d / math.pow(2,15)
 cb_interval = 4
-lv = startLv
-levelUpDelay = math.max(6*syn_tau, 5e-3)
+lv = 0
+levelUpDelay = 5e-3
 cb_counter = {}
-for i=0,startLv do cb_counter[i]=0 end
+cb_counter[0] = 0
 while endTime-time > 0.001*dt do
 	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
+	
+	-- log memory consumption
+	mi:memory_consumption()
+	print("local virtual memory:   " .. mi:local_virtual_memory() / (1024.0*1024.0) .. " MB")
+	print("global virtual memory:  " .. mi:global_virtual_memory() / (1024.0*1024.0) .. " MB")
+	print("maximal virtual memory: " .. mi:max_virtual_memory() / (1024.0*1024.0) .. " MB")
+	print("local resident memory:   " .. mi:local_resident_memory() / (1024.0*1024.0) .. " MB")
+	print("global resident memory:  " .. mi:global_resident_memory() / (1024.0*1024.0) .. " MB")
+	print("maximal resident memory: " .. mi:max_resident_memory() / (1024.0*1024.0) .. " MB")
+	if ProcRank() == 0 then
+		memMeasFile:write(time, "\t", mi:max_resident_memory() / (1024.0*1024.0), "\n")
+	end
 	
 	-- setup time Disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
@@ -720,6 +746,10 @@ while endTime-time > 0.001*dt do
 		then 
 			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
 			time = endTime
+			
+			if generateVTKoutput then
+				out:print(outPath .. "vtk/failed_solution3d", u, 0, time)
+			end
 		else
 			print ("Trying with half the time step...")
 			cb_counter[lv] = 0
@@ -730,18 +760,19 @@ while endTime-time > 0.001*dt do
 		
 		-- update check-back counter and, if applicable, reset dt
 		cb_counter[lv] = cb_counter[lv] + 1
-		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > 0) do
 			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
-			dt = 2*dt;
+			dt = 2*dt
 			lv = lv - 1
 			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
 			cb_counter[lv+1] = 0
 		end
 		
 		-- plot solution every pstep seconds
-		if (generateVTKoutput) then
+		if generateVTKoutput then
 			if math.abs(time/pstep - math.floor(time/pstep+0.5)) < 1e-5 then
-				out:print(filename .. "vtk/solution3d", u, math.floor(time/pstep+0.5), time)
+				out:print(outPath .. "vtk/solution3d", u, math.floor(time/pstep+0.5), time)
+				out:write_time_pvd(outPath .. "vtk/solution3d", u)
 			end
 		end
 		
@@ -754,11 +785,15 @@ while endTime-time > 0.001*dt do
 		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
 		solTimeSeries:push_discard_oldest(oldestSol, time)
 		
-		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
+		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++")
 	end
-
 end
 
--- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(filename .. "vtk/solution3d", u) end
+if ProcRank() == 0 then
+	memMeasFile:close()
+end
+
+if doProfiling then
+	WriteProfileData(outPath .. "pd.pdxml")
+end
 

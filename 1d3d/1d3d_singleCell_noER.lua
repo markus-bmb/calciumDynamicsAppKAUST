@@ -5,11 +5,10 @@
 -- activating specifically set synapses. On the 3d domain, it solves a        --
 -- calcium problem (diffusion and buffering) with channels and pumps in the   --
 -- plasma membrane, where VDCCs are activated according to the potential      --
--- mapped from the 1d domain. Additionally, the 3d domain contains an ER on   --
--- whose membrane pumps and channels cause calcium exchange with the cytosol. --
+-- mapped from the 1d domain.                                                 --
 --                                                                            --
 -- Author: Markus Breit                                                       --
--- Date:   2017-02-23                                                         --
+-- Date:   2017-02-15                                                         --
 --------------------------------------------------------------------------------
 
 -- for profiler output
@@ -21,12 +20,12 @@ ug_load_script("util/load_balancing_util.lua")
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
 dim = 3
-InitUG(dim, AlgebraType("CPU", 1));
+InitUG(dim, AlgebraType("CPU", 1))
 
 
 -- choice of grid and refinement level
-gridName1d = util.GetParam("-grid1d", "../apps/calciumDynamics_app/grids/smith_1d.ugx")
-gridName3d = util.GetParam("-grid3d", "../apps/calciumDynamics_app/grids/smith_3d_farSyns.ugx")
+gridName1d = util.GetParam("-grid1d", "cable_neuron_app/grids/NMO_05371_1d.ugx")
+gridName3d = util.GetParam("-grid3d", "cable_neuron_app/grids/NMO_05371_3d_6.ugx")
 numRefs = util.GetParamNumber("-numRefs", 0)
 gridSyn = string.sub(gridName1d, 1, string.len(gridName1d) - 4) .. "_syns.ugx" 
 
@@ -102,12 +101,16 @@ syn_revPot = 0.0
 
 function file_exists(name)
 	local f = io.open(name,"r")
-	if f ~= nil then io.close(f) return true else return false end
+	if f ~= nil then
+		io.close(f)
+		return true
+	end
+	return false
 end
 
 -- check if grid version with synapses already exists
 -- if so, just use it, otherwise, create it
-if not file_exists(gridSyn) then
+if not file_exists(FindFileInStandardPaths(gridSyn)) then
 	-- synapse distributor only works in serial mode
 	if NumProcs() > 1 then
 		print("Cannot use SynapseDistributor in parallel atm. Please create synapse geometry in serial.")
@@ -117,50 +120,45 @@ if not file_exists(gridSyn) then
 	-- use synapse distributor to place synapses on the grid
 	synDistr = SynapseDistributor(gridName1d)
 
+	syn0 = AlphaSynapsePair()
+	syn0:set_id(0)
+	syn0:set_onset(syn_onset[1])
+	syn0:set_tau(syn_tau)                   -- default value
+	syn0:set_gMax(syn_gMax)                 -- default value
+	syn0:set_reversal_potential(syn_revPot) -- default value
+	synDistr:place_synapse_at_coords({48.6979e-6, -25.7417e-6, -51.8133e-6}, syn0:pre_synapse(), syn0:post_synapse())
+	
 	syn1 = AlphaSynapsePair()
-	syn1:set_id(0)
-	syn1:set_onset(syn_onset[1])
+	syn1:set_id(1)
+	syn1:set_onset(syn_onset[2])
 	syn1:set_tau(syn_tau)                   -- default value
 	syn1:set_gMax(syn_gMax)                 -- default value
 	syn1:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-19.9609e-6, 43.9832e-6, 5.82852e-6}, syn1:pre_synapse(), syn1:post_synapse())
-	synDistr:place_synapse_at_coords({-42.1714-6, 133.237e-6, 24.8023e-6}, syn1:pre_synapse(), syn1:post_synapse())
+	synDistr:place_synapse_at_coords({48.6078e-6, -31.0386e-6, -52.6981e-6}, syn1:pre_synapse(), syn1:post_synapse())
 	
 	syn2 = AlphaSynapsePair()
-	syn2:set_id(1)
-	syn2:set_onset(syn_onset[2])
+	syn2:set_id(2)
+	syn2:set_onset(syn_onset[3])
 	syn2:set_tau(syn_tau)                   -- default value
 	syn2:set_gMax(syn_gMax)                 -- default value
 	syn2:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-18.5196e-6, 40.3637e-6, 5.8769e-6}, syn2:pre_synapse(), syn2:post_synapse())
-	synDistr:place_synapse_at_coords({-40.7199e-6, 130.633e-6, 23.3533e-6}, syn2:pre_synapse(), syn2:post_synapse())
+	synDistr:place_synapse_at_coords({44.5422e-6, -29.373e-6, -50.5679e-6}, syn2:pre_synapse(), syn2:post_synapse())
 	
 	syn3 = AlphaSynapsePair()
-	syn3:set_id(2)
-	syn3:set_onset(syn_onset[3])
+	syn3:set_id(3)
+	syn3:set_onset(syn_onset[4])
 	syn3:set_tau(syn_tau)                   -- default value
 	syn3:set_gMax(syn_gMax)                 -- default value
 	syn3:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-18.6295e-6, 35.8769e-6, 5.87629e-6}, syn3:pre_synapse(), syn3:post_synapse())
-	synDistr:place_synapse_at_coords({-40.6288e-6, 126.593e-6, 22.5147e-6}, syn3:pre_synapse(), syn3:post_synapse())
+	synDistr:place_synapse_at_coords({37.3088e-6, -30.2939e-6, -47.3506e-6}, syn3:pre_synapse(), syn3:post_synapse())
 	
 	syn4 = AlphaSynapsePair()
-	syn4:set_id(3)
-	syn4:set_onset(syn_onset[4])
+	syn4:set_id(4)
+	syn4:set_onset(syn_onset[5])
 	syn4:set_tau(syn_tau)                   -- default value
 	syn4:set_gMax(syn_gMax)                 -- default value
 	syn4:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-19.53e-6, 32.1163e-6, 5.87559e-6}, syn4:pre_synapse(), syn4:post_synapse())
-	synDistr:place_synapse_at_coords({-42.0221e-6, 123.26e-6, 21.9985e-6}, syn4:pre_synapse(), syn4:post_synapse())
-	
-	syn5 = AlphaSynapsePair()
-	syn5:set_id(4)
-	syn5:set_onset(syn_onset[5])
-	syn5:set_tau(syn_tau)                   -- default value
-	syn5:set_gMax(syn_gMax)                 -- default value
-	syn5:set_reversal_potential(syn_revPot) -- default value
-	--synDistr:place_synapse_at_coords({-20.7218e-6, 28.1453e-6, 5.93687e-6}, syn5:pre_synapse(), syn5:post_synapse())
-	synDistr:place_synapse_at_coords({-42.8684e-6, 119.663e-6, 21.1337e-6}, syn5:pre_synapse(), syn5:post_synapse())
+	synDistr:place_synapse_at_coords({28.4005e-6, -25.7081e-6, -41.7937e-6}, syn4:pre_synapse(), syn4:post_synapse())
 	
 	exportSuccess = synDistr:export_grid(gridSyn)
 	if not exportSuccess then
@@ -171,6 +169,7 @@ end
 
 gridName1d = gridSyn
 
+print("    grid       = " .. gridName1d)
 
 --------------------------
 -- biological settings	--
@@ -228,7 +227,7 @@ temp = 37.0
 ------------------------------------
 -- create 1d domain and approx space --
 ------------------------------------
-neededSubsets1d = {"soma", "dendrite"} --, "axon"}
+neededSubsets1d = {"soma", "dendrite", "axon"}
 dom1d = util.CreateDomain(gridName1d, 0, neededSubsets1d)
 
 approxSpace1d = ApproximationSpace(dom1d)
@@ -239,21 +238,20 @@ if withIons == true then
 	approxSpace1d:add_fct("ca", "Lagrange", 1)
 end
 
-approxSpace1d:init_levels();
-approxSpace1d:init_surfaces();
-approxSpace1d:init_top_surface();
+approxSpace1d:init_levels()
+approxSpace1d:init_surfaces()
+approxSpace1d:init_top_surface()
 approxSpace1d:print_layout_statistic()
 approxSpace1d:print_statistic()
 
-OrderCuthillMcKee(approxSpace1d, true);
+OrderCuthillMcKee(approxSpace1d, true)
+
 
 ---------------------------
 -- create 1d discretization --
 ---------------------------
-allSubsets = "soma, dendrite" --, axon"
-
 -- cable equation
-CE = CableEquation(allSubsets, withIons)
+CE = CableEquation("soma, dendrite, axon", withIons)
 CE:set_spec_cap(spec_cap)
 CE:set_spec_res(spec_res)
 CE:set_rev_pot_k(e_k)
@@ -268,11 +266,11 @@ CE:set_temperature_celsius(temp)
 -- Hodgkin and Huxley channels
 --HH = ChannelHHNernst("v, k, na", "axon")
 if withIons == true then
-	HH = ChannelHHNernst("v", allSubsets)
+	HH = ChannelHHNernst("v", "axon, dendrite, soma")
 else
-	HH = ChannelHH("v", allSubsets)
+	HH = ChannelHH("v", "axon, dendrite, soma")
 end
---HH:set_conductances(g_k_ax, g_na_ax, "axon")
+HH:set_conductances(g_k_ax, g_na_ax, "axon")
 HH:set_conductances(g_k_so, g_na_so, "soma")
 HH:set_conductances(g_k_de, g_na_de, "dendrite")
 
@@ -282,9 +280,9 @@ CE:add(HH)
 -- leakage
 tmp_fct = math.pow(2.3,(temp-23.0)/10.0)
 
-leak = ChannelLeak("v", allSubsets)
---leak:set_cond(g_l_ax*tmp_fct, "axon")
---leak:set_rev_pot(-0.066148458, "axon")
+leak = ChannelLeak("v", "axon, dendrite, soma")
+leak:set_cond(g_l_ax*tmp_fct, "axon")
+leak:set_rev_pot(-0.066148458, "axon")
 leak:set_cond(g_l_so*tmp_fct, "soma")
 leak:set_rev_pot(-0.030654022, "soma")
 leak:set_cond(g_l_de*tmp_fct, "dendrite")
@@ -311,12 +309,10 @@ domDisc1d:add(CE)
 ----------------------------------
 -- total cytosolic calbindin concentration
 -- (four times the real value in order to simulate four binding sites in one)
-totalClb = 4*40.0e-6
+totalClb = 4*10.0e-6
 
 -- diffusion coefficients
 D_cac = 220.0
-D_cae = 220.0
-D_ip3 = 280.0
 D_clb = 20.0
 
 -- calbindin binding rates
@@ -325,32 +321,12 @@ k_unbind_clb = 	19
 
 -- initial concentrations
 ca_cyt_init = 5.0e-08
-ca_er_init = 2.5e-4
-ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
 
-
--- IP3 constants
-reactionRateIP3 = 0.11
-equilibriumIP3 = 4.0e-08
-reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
-
--- ER densities
-IP3Rdensity = 17.3
-RYRdensity = 0.86
-leakERconstant = 3.8e-17
-local v_s = 6.5e-27  -- V_S param of SERCA pump
-local k_s = 1.8e-7   -- K_S param of SERCA pump
-SERCAfluxDensity =   IP3Rdensity * 3.7606194166520605e-23        -- j_ip3r
-			       + RYRdensity * 1.1204582669024472e-21       -- j_ryr
-			       + leakERconstant * (ca_er_init-ca_cyt_init) -- j_leak
-SERCAdensity = SERCAfluxDensity / (v_s/(k_s/ca_cyt_init+1.0)/ca_er_init)
-if (SERCAdensity < 0) then error("SERCA flux density is outward for these density settings!") end
-
--- PM densities
 pmcaDensity = 500.0
 ncxDensity  = 15.0
 vdccDensity = 1.0
+
 leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s)
 				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s)
 				+ vdccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
@@ -358,15 +334,49 @@ leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux 
 if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
 
+--[[
+--------------------------------------------
+-- activation function for the 3d problem --
+--------------------------------------------
+firstSynSubset = 2
+lastSynSubset = 6
+
+-- synaptic areas in the grid [um]
+syn_area = {1.352, 1.58385, 2.54821, 2.91204, 3.24447}
+
+-- calcium influx for active synapses
+function synCurrentDensity(x, y, z, t, si)
+	if (si >= firstSynSubset and si <= lastSynSubset) then
+	    s = si - firstSynSubset + 1
+	    if (t >= syn_onset[s] and t < syn_onset[s] + 6.0*syn_tau) then
+	    	local conductance = syn_gMax * (t - syn_onset[s]) / syn_tau * math.exp(-(t - syn_onset[s] - syn_tau) / syn_tau);
+	   		
+	   		-- we assume membrane potential to be -0.065 throughout (as we do not know the real one)
+	   		local el_current = - (-0.065 - syn_revPot) * conductance -- [A]
+	   		
+	   		-- about 10% of the current is carried by calcium
+	    	local ionic_current = 0.01 * el_current / (2 * 96485.0) -- [mol/s]
+	    	
+	    	-- we need a current density!
+	    	local current_density = ionic_current / syn_area[s] -- [mol/(s*um^2)]
+	    	
+	    	-- finally, we need to scale mol -> mol (um/dm)^3
+	    	return current_density * 1e15
+	   	end
+	end
+	
+	return 0.0
+end
+--]]
+
 ----------------------------------
 -- setup 3d approximation space --
 ----------------------------------
 -- create, load, refine and distribute domain
-reqSubsets = {"cyt", "er", "pm", "erm", "syn1", "syn2", "syn3", "syn4", "syn5"}
+reqSubsets = {"cyt", "pm", "syn0", "syn1", "syn2", "syn3", "syn4"}
 dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
 balancer.partitioner = "parmetis"
 
--- protect ER membrane from being cut by partitioning
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -377,21 +387,6 @@ balancer.PrintParameters()
 -- in parallel environments: use a load balancer to distribute the grid
 -- actual refinement and load balancing after setup of disc.
 loadBalancer = balancer.CreateLoadBalancer(dom3d)
-
--- refining and distributing
--- manual refinement (need to update interface node location in each step)
-if loadBalancer ~= nil then
-	loadBalancer:enable_vertical_interface_creation(false)
-	if balancer.partitioner == "parmetis" then
-		mu = ManifoldUnificator(dom3d)
-		mu:add_protectable_subsets("erm")
-		cdgm = ClusteredDualGraphManager()
-		cdgm:add_unificator(SiblingUnificator())
-		cdgm:add_unificator(mu)
-		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
-	end
-	balancer.Rebalance(dom3d, loadBalancer)
-end
 
 -- refining and distributing
 -- manual refinement (need to update interface node location in each step)
@@ -415,29 +410,24 @@ print(dom3d:domain_info():to_string())
 
 
 --[[
---print("Saving domain grid and hierarchy.")
-SaveDomain(dom3d, "refined_grid_p" .. ProcRank() .. ".ugx")
-SaveGridHierarchyTransformed(dom3d:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
+print("Saving domain grid and hierarchy.")
+--SaveDomain(dom3d, "grid/refined_grid_p" .. ProcRank() .. ".ugx")
+SaveGridHierarchyTransformed(dom3d:grid(), dom3d:subset_handler(), filename.."grid/refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
 print("Saving parallel grid layout")
-SaveParallelGridLayout(dom3d:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
+SaveParallelGridLayout(dom3d:grid(), filename.."grid/parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
 -- create approximation space
 approxSpace3d = ApproximationSpace(dom3d)
 
 cytVol = "cyt"
-erVol = "er"
-plMem = "pm, syn1, syn2, syn3, syn4, syn5"
-plMem_vec = {"pm", "syn1", "syn2", "syn3", "syn4", "syn5"}
-erMem = "erm"
+plMem = "pm, syn0, syn1, syn2, syn3, syn4"
+plMem_vec = {"pm", "syn0", "syn1", "syn2", "syn3", "syn4"}
 
-outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
-innerDomain = erVol .. ", " .. erMem 
+outerDomain = cytVol .. ", " .. plMem
 
-approxSpace3d:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
-approxSpace3d:add_fct("ca_er", "Lagrange", 1, innerDomain)
-approxSpace3d:add_fct("clb", "Lagrange", 1, outerDomain)
-approxSpace3d:add_fct("ip3", "Lagrange", 1, outerDomain)
+approxSpace3d:add_fct("ca_cyt", "Lagrange", 1)
+approxSpace3d:add_fct("clb", "Lagrange", 1)
 
 approxSpace3d:init_levels();
 approxSpace3d:init_surfaces();
@@ -445,66 +435,26 @@ approxSpace3d:init_top_surface();
 approxSpace3d:print_layout_statistic()
 approxSpace3d:print_statistic()
 
+OrderCuthillMcKee(approxSpace3d, true);
+
 --------------------------
 -- setup discretization --
 --------------------------
 -- diffusion --
-diffCaCyt = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
-diffCaCyt:set_diffusion(D_cac)
-
-diffCaER = ConvectionDiffusion("ca_er", erVol, "fv1")
-diffCaER:set_diffusion(D_cae)
+diffCa = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
+diffCa:set_diffusion(D_cac)
 
 diffClb = ConvectionDiffusion("clb", cytVol, "fv1")
 diffClb:set_diffusion(D_clb)
 
-diffIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
-diffIP3:set_diffusion(D_ip3)
-diffIP3:set_reaction_rate(reactionRateIP3)
-diffIP3:set_reaction(reactionTermIP3)
-
-
 -- buffering --
-discBuffer = BufferFV1(cytVol) -- where buffering occurs
-discBuffer:add_reaction(
+elemDiscBuffering = BufferFV1(cytVol) -- where buffering occurs
+elemDiscBuffering:add_reaction(
 	"clb",						    -- the buffering substance
 	"ca_cyt",						-- the buffered substance
 	totalClb,						-- total amount of buffer
 	k_bind_clb,					    -- binding rate constant
 	k_unbind_clb)				    -- unbinding rate constant
-
-
--- er membrane transport systems
-ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
-ip3r:set_scale_inputs({1e3,1e3,1e3})
-ip3r:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-
-ryr = RyR({"ca_cyt", "ca_er"})
---ryr = RyRinstat({"ca_cyt", "ca_er"}, erMemVec, approxSpace)
-ryr:set_scale_inputs({1e3,1e3})
-ryr:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-
-serca = SERCA({"ca_cyt", "ca_er"})
-serca:set_scale_inputs({1e3,1e3})
-serca:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
-
-leakER = Leak({"ca_er", "ca_cyt"})
-leakER:set_scale_inputs({1e3,1e3})
-leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
-
-
-discIP3R = MembraneTransportFV1(erMem, ip3r)
-discIP3R:set_density_function(IP3Rdensity)
-
-discRyR = MembraneTransportFV1(erMem, ryr)
-discRyR:set_density_function(RYRdensity)
-
-discSERCA = MembraneTransportFV1(erMem, serca)
-discSERCA:set_density_function(SERCAdensity)
-
-discERLeak = MembraneTransportFV1(erMem, leakER)
-discERLeak:set_density_function(1e12*leakERconstant/(1e3)) -- from mol/(um^2 s M) to m/s
-
 
 -- plasma membrane transport systems
 pmca = PMCA({"ca_cyt", ""})
@@ -540,49 +490,46 @@ vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
 vdcc:init(0.0)
 
+
 discPMCA = MembraneTransportFV1(plMem, pmca)
 discPMCA:set_density_function(pmcaDensity)
 
 discNCX = MembraneTransportFV1(plMem, ncx)
 discNCX:set_density_function(ncxDensity)
 
-discPMLeak = MembraneTransportFV1(plMem, leakPM)
-discPMLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
+discLeak = MembraneTransportFV1(plMem, leakPM)
+discLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 
 discVDCC = MembraneTransportFV1(plMem, vdcc)
 discVDCC:set_density_function(vdccDensity)
 
-
-synapseInflux = HybridSynapseCurrentAssembler(approxSpace3d, approxSpace1d, syn_handler, {"pm"}, "ca_cyt", "ip3")
+-- synaptic activity --
+--[[
+synapseInflux = UserFluxBoundaryFV1("ca_cyt", plMem)
+synapseInflux:set_flux_function("synCurrentDensity")
+--]]
+---[[
+synapseInflux = HybridSynapseCurrentAssembler(approxSpace3d, approxSpace1d, syn_handler, plMem_vec, "ca_cyt")
 synapseInflux:set_current_percentage(0.01)
-synapseInflux:set_3d_neuron_ids({0})
 synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
 synapseInflux:set_valency(2)
-synapseInflux:set_ip3_production_params(6e-20, 1.188)
-
-
+--]]
 
 -- domain discretization --
 domDisc3d = DomainDiscretization(approxSpace3d)
 
-domDisc3d:add(diffCaCyt)
-domDisc3d:add(diffCaER)
+domDisc3d:add(diffCa)
 domDisc3d:add(diffClb)
-domDisc3d:add(diffIP3)
 
-domDisc3d:add(discBuffer)
-
-domDisc3d:add(discIP3R)
-domDisc3d:add(discRyR)
-domDisc3d:add(discSERCA)
-domDisc3d:add(discERLeak)
+domDisc3d:add(elemDiscBuffering)
 
 domDisc3d:add(discPMCA)
 domDisc3d:add(discNCX)
-domDisc3d:add(discPMLeak)
+domDisc3d:add(discLeak)
 domDisc3d:add(discVDCC)
 
 domDisc3d:add(synapseInflux)
+
 
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domDisc3d)
@@ -610,9 +557,7 @@ convCheck:set_verbose(verbose3d)
 
 if (solverID == "ILU") then
     bcgs_steps = 10000
-    ilu = ILU()
-    ilu:set_sort(true)
-    bcgs_precond = ilu
+    bcgs_precond = ILU()
 elseif (solverID == "GS") then
     bcgs_steps = 10000
     bcgs_precond = GaussSeidel()
@@ -649,7 +594,6 @@ bicgstabSolver:set_convergence_check(convCheck)
 --- non-linear solver ---
 -- convergence check
 newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 1e-18, 1e-12)
---newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-12)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 --newtonConvCheck:set_adaptive(true)
@@ -671,9 +615,7 @@ u = GridFunction(approxSpace3d)
 
 -- set initial value
 InterpolateInner(ca_cyt_init, u, "ca_cyt", 0.0)
-InterpolateInner(ca_er_init, u, "ca_er", 0.0)
 InterpolateInner(clb_init, u, "clb", 0.0)
-InterpolateInner(ip3_init, u, "ip3", 0.0)
 
 -- timestep in seconds
 dt = dt3dStart
@@ -694,9 +636,9 @@ solTimeSeries = SolutionTimeSeries()
 solTimeSeries:push(uOld, time)
 
 min_dt = dt3d / math.pow(2,15)
-cb_interval = 4
+cb_interval = 10
 lv = startLv
-levelUpDelay = math.max(6*syn_tau, 5e-3)
+levelUpDelay = 0.05--6*syn_tau
 cb_counter = {}
 for i=0,startLv do cb_counter[i]=0 end
 while endTime-time > 0.001*dt do

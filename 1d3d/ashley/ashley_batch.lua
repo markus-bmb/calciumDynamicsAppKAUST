@@ -1,9 +1,9 @@
-------------------------------------------------------------
--- Control script for Ashley's 1d/3d simulations          --
---                                                        --
--- author: mbreit                                         --
--- date:   2017-05-22                                     --
-------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Control script for Ashley's 1d/3d simulations                              --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-05-22                                                         --
+--------------------------------------------------------------------------------
 
 ug_load_script("ug_util.lua")
 ug_load_script("ashley_util.lua")
@@ -33,7 +33,7 @@ outPath = util.GetParam("-outPath", cellID .. "_peakCond" .. peakCond)
 
 
 -- parse ball regions and soma name for this cell
-layers = parse_params(cellID, "coordinatesForModeling_final.txt")
+layers = parse_params(cellID, FindFileInStandardPaths("coordinatesForModeling_final.txt"))
 
 
 -- simulation setup
@@ -98,5 +98,5 @@ then
 	simulation_setup.stimSyn.region.z = layers[layer][3] * 1e-6
 	
 	-- do the actual simulation
-	dofile 'ashley_1d-3d.lua'
+	dofile (FindFileInStandardPaths('ashley_1d-3d.lua'))
 end

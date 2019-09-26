@@ -1,17 +1,16 @@
--------------------------------------------------------------------------
--- This script sets up a 1d/3d hybrid simulation with a 1d network and --
--- the 3d representation of one of the network cells.                  --
--- On the 1d domain, it solves the cable equation with HH channels,    --
--- activating specifically set synapses. On the 3d domain, it solves   --
--- a calcium problem (diffusion and buffering) with channels and pumps --
--- in the plasma membrane, where VDCCs are activated according to the  --
--- potential mapped from the 1d domain. Additionally, the 3d domain    --
--- contains an ER on whose membrane pumps and channels cause calcium   --
--- exchange with the cytosol.                                          --
---                                                                     --
--- author: mbreit                                                      --
--- date:   10-04-2017                                                  --
--------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This script sets up a 1d/3d hybrid simulation with a 1d network and the 3d --
+-- representation of one of the network cells.                                --
+-- On the 1d domain, it solves the cable equation with HH channels,           --
+-- activating specifically set synapses. On the 3d domain, it solves a        --
+-- calcium problem (diffusion and buffering) with channels and pumps in the   --
+-- plasma membrane, where VDCCs are activated according to the potential      --
+-- mapped from the 1d domain. Additionally, the 3d domain contains an ER on   --
+-- whose membrane pumps and channels cause calcium exchange with the cytosol. --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   10-04-2017                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(false)
@@ -27,7 +26,7 @@ InitUG(dim, AlgebraType("CPU", 1))
 
 -- choice of grid and refinement level
 gridName1d = util.GetParam("-grid1d", "testNetwork120.ugx")
-gridName3d = util.GetParam("-grid3d", "testNetwork120_n113_3d_noAxon.ugx")
+gridName3d = util.GetParam("-grid3d", "testNetwork120_113_3d_noAxon_ER.ugx")
 numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- parameters for instationary simulation

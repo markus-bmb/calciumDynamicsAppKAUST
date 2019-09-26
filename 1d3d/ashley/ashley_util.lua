@@ -1,7 +1,8 @@
-------------------------------------------------------
--- Utility functions for Ashley's 1d/3d simulations --
--- \author stephan grein <grein@temple.edu>         --
-------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Utility functions for Ashley's 1d/3d simulations                           --
+--                                                                            --
+-- Author: Stephan Grein <grein@temple.edu>                                   --
+--------------------------------------------------------------------------------
 
 -- parse activation ball region centers for a cell --
 function parse_params(cellname, coordFile)

@@ -1,16 +1,16 @@
---------------------------------------------------------------------------
--- The script sets up a 1d/3d hybrid simulation on a VEGFD or SCR cell. --
--- On the 1d domain, it solves the cable equation with HH channels,     --
--- activating synapses distributed in a specified ball region.          --
--- On the 3d domain, it solves a calcium problem (diffusion and         --
--- buffering) with channels and pumps in the plasma membrane, where     --
--- VDCCs are activated according to the potential mapped from the 1d    --
--- domain. Additionally, the 3d domain contains an ER on whose membrane --
--- pumps and channels cause calcium exchange with the cytosol.          --
---                                                                      --
--- author: mbreit (with some addenda by sgrein)                         --
--- date:   2017-05-22                                                   --
---------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- The script sets up a 1d/3d hybrid simulation on a VEGFD or SCR cell.       --
+-- On the 1d domain, it solves the cable equation with HH channels,           --
+-- activating synapses distributed in a specified ball region.                --
+-- On the 3d domain, it solves a calcium problem (diffusion and buffering)    --
+-- with channels and pumps in the plasma membrane, where VDCCs are activated  --
+-- according to the potential mapped from the 1d domain. Additionally, the 3d --
+-- domain contains an ER on whose membrane pumps and channels cause calcium   --
+-- exchange with the cytosol.                                                 --
+--                                                                            --
+-- Author: Markus Breit (with some addenda by Stephan Grein)                  --
+-- Date:   2017-05-22                                                         --
+--------------------------------------------------------------------------------
 
 
 -- load some pre-implemented functionality first and init --
@@ -19,7 +19,7 @@ ug_load_script("util/load_balancing_util.lua")
 
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 
 ----------------------------------
