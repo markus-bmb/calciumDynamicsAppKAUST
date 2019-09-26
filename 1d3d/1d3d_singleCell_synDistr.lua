@@ -1,20 +1,20 @@
--------------------------------------------------------------------------
--- This script sets up a 1d/3d hybrid simulation.                      --
--- On the 1d domain, it solves the cable equation with HH channels,    --
--- activating randomly distributed synapses within a ball.             --
--- On the 3d domain, it solves a calcium problem (diffusion and        --
--- buffering) with channels and pumps in the plasma membrane, where    --
--- VDCCs are activated according to the potential mapped from the      --
--- 1d domain. Additionally, the 3d domain contains an ER on whose      --
--- membrane pumps and channels cause calcium exchange with the cytosol.--
---                                                                     --
--- author: mbreit                                                      --
--- date:   2017-06-27                                                  --
--------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This script sets up a 1d/3d hybrid simulation with a single cell in the 1d --
+-- "network" that is also resolved in 3d.                                     --
+-- On the 1d domain, it solves the cable equation with HH channels,           --
+-- activating randomly distributed synapses within a ball.                    --
+-- On the 3d domain, it solves a calcium problem (diffusion and buffering)    --
+-- with channels and pumps in the plasma membrane, where VDCCs are activated  --
+-- according to the potential mapped from the 1d domain. Additionally, the 3d --
+-- domain contains an ER on whose membrane pumps and channels cause calcium   --
+-- exchange with the cytosol.                                                 --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-06-27                                                         --
+--------------------------------------------------------------------------------
 
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
-ug_load_script("plugins/Limex/limex_util.lua")
 
 AssertPluginsLoaded({"cable_neuron", "neuro_collection"})
 
@@ -22,14 +22,15 @@ InitUG(3, AlgebraType("CPU", 1))
 
 
 -- choice of grid and refinement level
-gridName1d = util.GetParam("-grid1d", "../apps/calciumDynamics_app/grids/NM1_1d.ugx")
-gridName3d = util.GetParam("-grid3d", "../apps/calciumDynamics_app/grids/NM1_3d.ugx")
+gridName1d = util.GetParam("-grid1d", "calciumDynamics_app/grids/NM1_1d.ugx")
+gridName3d = util.GetParam("-grid3d", "calciumDynamics_app/grids/NM1_3d.ugx")
 numRefs = util.GetParamNumber("-numRefs", 0)
 gridSyn = string.sub(gridName1d, 1, string.len(gridName1d) - 4) .. "_syn.ugx" 
 
 -- parameters for instationary simulation
 dt1d = util.GetParamNumber("-dt1d", 1e-5) -- in s
 dt3d = util.GetParamNumber("-dt3d", 1e-2) -- in s
+dt3dStart = util.GetParamNumber("-dt3dstart", dt3d)
 endTime = util.GetParamNumber("-endTime", 1.0)  -- in s
 
 -- with simulation of single ion concentrations?
@@ -58,12 +59,30 @@ pstep = util.GetParamNumber("-pstep", dt3d, "plotting interval")
 filename = util.GetParam("-outName", "hybrid_test")
 filename = filename.."/"
 
+-- profiling?
+doProfiling = util.HasParamOption("-profile")
+SetOutputProfileStats(doProfiling)
+
+
+-- choose length of time step at the beginning
+-- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
+function log2(x)
+	return math.log(x) / math.log(2)
+end
+startLv =  math.ceil(log2(dt3d / dt3dStart))
+dt3dStartNew = dt3d / math.pow(2, startLv)
+if (math.abs(dt3dStartNew - dt3dStart) / dt3dStart > 1e-5) then 
+	print("dt3dStart argument ("..dt3dStart..") was not admissible; taking "..dt3dStartNew.." instead.")
+end
+dt3dStart = dt3dStartNew
+
 
 print("Chosen parameters:")
 print("    grid       = " .. gridName1d)
 print("    numRefs    = " .. numRefs)
 print("    dt1d       = " .. dt1d)
 print("    dt3d       = " .. dt3d)
+print("    dt3dStart  = " .. dt3dStart)
 print("    endTime    = " .. endTime)
 print("    pstep      = " .. pstep)
 print("    ions       = " .. tostring(withIons))
@@ -92,7 +111,12 @@ end
 
 -- check if grid version with synapses already exists
 -- if so, just use it, otherwise, create it
-if not file_exists(gridSyn) then
+if not file_exists(FindFileInStandardPaths(gridSyn)) then
+	if NumProcs() > 1 then
+		print("Cannot use SynapseDistributor in parallel atm. Please create synapse geometry in serial.")
+		exit()
+	end
+	
 	sd = SynapseDistributor(gridName1d)
 	sd:clear()
 	sd:place_synapses_uniform(
@@ -177,10 +201,13 @@ if withIons == true then
 	approxSpace1d:add_fct("ca", "Lagrange", 1)
 end
 
+approxSpace1d:init_levels()
+approxSpace1d:init_surfaces()
 approxSpace1d:init_top_surface()
+approxSpace1d:print_layout_statistic()
 approxSpace1d:print_statistic()
 
-OrderCuthillMcKee(approxSpace1d, true);
+OrderCuthillMcKee(approxSpace1d, true)
 
 ---------------------------
 -- create 1d discretization --
@@ -269,6 +296,7 @@ domDisc1d:add(CE)
 
 
 
+
 ----------------------------------
 -- constants for the 3d problem --
 ----------------------------------
@@ -324,13 +352,11 @@ if (leakPMconstant < 0) then error("PM leak flux is outward for these density se
 ----------------------------------
 -- setup 3d approximation space --
 ----------------------------------
-
-InitUG(3, AlgebraType("CPU", 4))
-
 -- create, load, refine and distribute domain
 reqSubsets = {"cyt", "er", "pm", "erm"}
 dom3d = util.CreateDomain(gridName3d, 0, reqSubsets)
 balancer.partitioner = "parmetis"
+
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
@@ -345,7 +371,7 @@ loadBalancer = balancer.CreateLoadBalancer(dom3d)
 -- refining and distributing
 -- manual refinement (need to update interface node location in each step)
 if loadBalancer ~= nil then
-	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
+	loadBalancer:enable_vertical_interface_creation(false)
 	if balancer.partitioner == "parmetis" then
 		mu = ManifoldUnificator(dom3d)
 		mu:add_protectable_subsets("erm")
@@ -354,12 +380,7 @@ if loadBalancer ~= nil then
 		cdgm:add_unificator(mu)
 		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
 	end
-	balancer.Rebalance(dom, loadBalancer)
-	loadBalancer:estimate_distribution_quality()
-	loadBalancer:print_quality_records()
-	if balancer.partitioner == "parmetis" then
-		print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
-	end
+	balancer.Rebalance(dom3d, loadBalancer)
 end
 
 if numRefs > 0 then	
@@ -369,6 +390,11 @@ if numRefs > 0 then
 	end
 end
 
+if loadBalancer ~= nil then
+	print("Edge cut on base level: "..balancer.defaultPartitioner:edge_cut_on_lvl(0))
+	loadBalancer:estimate_distribution_quality()
+	loadBalancer:print_quality_records()
+end
 print(dom3d:domain_info():to_string())
 
 
@@ -393,16 +419,16 @@ erMemVec = {"erm"}
 outerDomain = cytVol .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem 
 
-approxSpace3d:add_fct("ca_cyt", "Lagrange", 1)--, outerDomain)
-approxSpace3d:add_fct("ca_er", "Lagrange", 1)--, innerDomain)
-approxSpace3d:add_fct("clb", "Lagrange", 1)--, outerDomain)
-approxSpace3d:add_fct("ip3", "Lagrange", 1)--, outerDomain)
+approxSpace3d:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
+approxSpace3d:add_fct("ca_er", "Lagrange", 1, innerDomain)
+approxSpace3d:add_fct("clb", "Lagrange", 1, outerDomain)
+approxSpace3d:add_fct("ip3", "Lagrange", 1, outerDomain)
 
-approxSpace3d:init_levels()
-approxSpace3d:init_top_surface()
+approxSpace3d:init_levels();
+approxSpace3d:init_surfaces();
+approxSpace3d:init_top_surface();
+approxSpace3d:print_layout_statistic()
 approxSpace3d:print_statistic()
-
-OrderCuthillMcKee(approxSpace3d, true);
 
 --------------------------
 -- setup discretization --
@@ -519,15 +545,8 @@ synapseInflux:set_current_percentage(0.01)
 synapseInflux:set_3d_neuron_ids({0})
 synapseInflux:set_scaling_factors(1e-15, 1e-6, 1.0, 1e-15)
 synapseInflux:set_valency(2)
-synapseInflux:set_ip3_production_params(6e-20, 1.188)
+synapseInflux:set_ip3_production_params(6e-21, 1.188)
 
-
--- Dirichlet for superfluous dofs
-uselessDofDiri = DirichletBoundary()
-uselessDofDiri:add(ca_cyt_init, "ca_cyt", "er")
-uselessDofDiri:add(ip3_init, "ip3", "er")
-uselessDofDiri:add(clb_init, "clb", "er")
-uselessDofDiri:add(ca_er_init, "ca_er", "cyt, pm")
 
 
 -- domain discretization --
@@ -551,9 +570,6 @@ domDisc3d:add(discPMLeak)
 domDisc3d:add(discVDCC)
 
 domDisc3d:add(synapseInflux)
-
-domDisc3d:add(uselessDofDiri)
-
 
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domDisc3d)
@@ -583,7 +599,6 @@ if (solverID == "ILU") then
     bcgs_steps = 10000
     ilu = ILU()
     ilu:set_sort(true)
-    ilu:enable_consistent_interfaces(true)
     bcgs_precond = ilu
 elseif (solverID == "GS") then
     bcgs_steps = 10000
@@ -619,8 +634,17 @@ bicgstabSolver:set_convergence_check(convCheck)
 --bicgstabSolver:set_debug(dbgWriter)
 
 --- non-linear solver ---
-newtonSolver = LimexNewtonSolver()
+-- convergence check
+newtonConvCheck = CompositeConvCheck(approxSpace3d, 10, 1e-17, 1e-10)
+--newtonConvCheck:set_component_check("ca_cyt, ca_er, clb, ip3", 1e-18, 1e-10)
+newtonConvCheck:set_verbose(true)
+newtonConvCheck:set_time_measurement(true)
+--newtonConvCheck:set_adaptive(true)
+
+-- Newton solver
+newtonSolver = NewtonSolver()
 newtonSolver:set_linear_solver(bicgstabSolver)
+newtonSolver:set_convergence_check(newtonConvCheck)
 --newtonSolver:set_debug(dbgWriter)
 
 newtonSolver:init(op)
@@ -639,79 +663,93 @@ InterpolateInner(clb_init, u, "clb", 0.0)
 InterpolateInner(ip3_init, u, "ip3", 0.0)
 
 -- timestep in seconds
-dt = dt3d
-dtmin = 1e-9
-dtmax = 1e-2
+dt = dt3dStart
 time = 0.0
 step = 0
 
 -- initial vtk output
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
 	out:print(filename .. "vtk/solution3d", u, step, time)
 end
 
+-- create new grid function for old value
+uOld = u:clone()
 
+-- store grid function in vector of old solutions
+solTimeSeries = SolutionTimeSeries()
+solTimeSeries:push(uOld, time)
 
-------------------
---  LIMEX setup --
-------------------
-nstages = 3            -- number of stages
-stageNSteps = {1,2,3,4}  -- number of time steps for each stage
-tol = 1.0             -- allowed relative error (part of reference error norm given to limexEstimator)
+min_dt = dt3d / math.pow(2,15)
+cb_interval = 4
+lv = startLv
+levelUpDelay = 0.01
+cb_counter = {}
+for i=0,startLv do cb_counter[i]=0 end
+while endTime-time > 0.001*dt do
+	print("++++++ POINT IN TIME  " .. math.floor((time+dt)/dt+0.5)*dt .. "s  BEGIN ++++++")
+	
+	-- setup time Disc for old solutions and timestep
+	timeDisc:prepare_step(solTimeSeries, dt)
+	
+	-- apply newton solver
+	if newtonSolver:apply(u) == false
+	then
+		-- in case of failure:
+		print ("Newton solver failed at point in time " .. time .. " with time step " .. dt)
+		
+		dt = dt/2
+		lv = lv + 1
+		VecScaleAssign(u, 1.0, solTimeSeries:latest())
+		
+		-- halve time step and try again unless time step below minimum
+		if dt < min_dt
+		then 
+			print ("Time step below minimum. Aborting. Failed at point in time " .. time .. ".")
+			time = endTime
+		else
+			print ("Trying with half the time step...")
+			cb_counter[lv] = 0
+		end
+	else
+		-- update new time
+		time = solTimeSeries:time(0) + dt
+		
+		-- update check-back counter and, if applicable, reset dt
+		cb_counter[lv] = cb_counter[lv] + 1
+		while cb_counter[lv] % (2*cb_interval) == 0 and lv > 0 and (time >= levelUpDelay or lv > startLv) do
+			print ("Doubling time due to continuing convergence; now: " .. 2*dt)
+			dt = 2*dt;
+			lv = lv - 1
+			cb_counter[lv] = cb_counter[lv] + cb_counter[lv+1] / 2
+			cb_counter[lv+1] = 0
+		end
+		
+		-- plot solution every pstep seconds
+		if (generateVTKoutput) then
+			if math.abs(time/pstep - math.floor(time/pstep+0.5)) < 1e-5 then
+				out:print(filename .. "vtk/solution3d", u, math.floor(time/pstep+0.5), time)
+			end
+		end
+		
+		-- get oldest solution
+		oldestSol = solTimeSeries:oldest()
+		
+		-- copy values into oldest solution (we reuse the memory here)
+		VecScaleAssign(oldestSol, 1.0, u)
+		
+		-- push oldest solutions with new values to front, oldest sol pointer is popped from end
+		solTimeSeries:push_discard_oldest(oldestSol, time)
+		
+		print("++++++ POINT IN TIME  " .. math.floor(time/dt+0.5)*dt .. "s  END ++++++++");
+	end
 
-limex = LimexTimeIntegrator(nstages)
-for i = 1, nstages do
-	limex:add_stage(stageNSteps[i], newtonSolver, domDisc3d)
 end
 
-limex:set_tolerance(tol)
-limex:set_time_step(dt)
-limex:set_dt_min(dtmin)
-limex:set_dt_max(dtmax)
-limex:set_increase_factor(2.0)
-
-
--- GridFunction error estimator (relative norm)
---errorEvaluator = L2ErrorEvaluator("ca_cyt", "cyt", 3, 1.0) -- function name, subset names, integration order, scale
-compCaCyt = L2ComponentSpace("ca_cyt", 3) -- function, order
-compCaER = L2ComponentSpace("ca_er", 3)
-compClb = L2ComponentSpace("clb", 3)
-compIP3 = L2ComponentSpace("ip3", 3)
-
---limexEstimator = ScaledGridFunctionEstimator()
---limexEstimator:add(errorEvalCa)
-limexEstimator = GridFunctionEstimator()
-limexEstimator:add(compCaCyt)--, 1.0/ca_cyt_init)
-limexEstimator:add(compCaER)--, 1.0/ca_er_init)
-limexEstimator:add(compClb)--, 1.0/clb_init)
-limexEstimator:add(compIP3)--, 1.0/ip3_init)
-local cytVolume = compute_volume_of_subset(approxSpace3d, 0)
-limexEstimator:set_reference_norm(math.sqrt(4*1e-9*1e-9*cytVolume))
-
-limex:add_error_estimator(limexEstimator)
-
--- for vtk output
-if (generateVTKoutput) then 
-	local vtkObserver = VTKOutputObserver(filename .."vtk/solution3d", out, pstep)
-	limex:attach_observer(vtkObserver)
-end
-
-
---bicgstabSolver:set_debug(dbgWriter)
---newtonSolver:set_debug(dbgWriter)
---gmg:set_debug(dbgWriter)
---convCheck:set_maximum_steps(1)
-
--- solve problem
-limex:apply(u, endTime, u, time)
-
-
-if (generateVTKoutput) then 
-	out:write_time_pvd(filename .. "vtk/solution3d", u)
-end
+-- end timeseries, produce gathering file
+if (generateVTKoutput) then out:write_time_pvd(filename .. "vtk/solution3d", u) end
 
 if doProfiling then
-	WriteProfileData(fileName .."pd.pdxml")
+	WriteProfileData(filename .."pd.pdxml")
 end
 
