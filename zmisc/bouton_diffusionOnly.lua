@@ -1,8 +1,14 @@
---------------------------------------------------------------
--- Bouton simulation for Ranjita                            --
---                                                          --
--- Author: Markus Breit                                     --
---------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Bouton example simulation for Ranjita                                      --
+-- This script simulates calcium dynamics within a half-sperical bouton that  --
+-- is activated by a VDCC influx modeled according to Ranjita Dutta-Roy.      --
+-- Apart from the influx, only PMCA efflux and diffusion is considered and    --
+-- there is a Dirichlet constraint at the boundary, which is probably a bad   --
+-- idea.                                                                      --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2018-02-09                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)

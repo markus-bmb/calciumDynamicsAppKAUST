@@ -233,7 +233,7 @@ balancer.partitioner = "parmetis"
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = 0
 balancer.firstDistProcs = 64
-balancer.redistSteps = 1
+balancer.redistSteps = 2
 balancer.redistProcs = 32
 
 loadBalancer = balancer.CreateLoadBalancer(dom)

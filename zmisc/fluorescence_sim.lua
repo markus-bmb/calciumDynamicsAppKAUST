@@ -1,37 +1,32 @@
-----------------------------------------------------------------
---  This script calculates fluorescence values for a specific --
---	dye and activation pattern.								  --
---	It is intended to reproduce experimental results.		  --
---                                                            --
---  Author: Markus Breit                                      --
---    Date:	16-09-2014	                                      --
-----------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This script calculates fluorescence values for a specific dye and          --
+-- activation pattern. It is intended to reproduce experimental results.      --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2014-09-16	                                                      --
+--------------------------------------------------------------------------------
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
 
--- dimension
-dim = 3
+AssertPluginsLoaded({"neuro_collection", "Limex", "MembranePotentialMapping"})
+
 
 -- choose dimension and algebra
-InitUG(dim, AlgebraType("CPU", 1));
-
--- speed up lua functions
---EnableLUA2C(true)
---SetDebugLevel(debugID.LUACompiler, 0) 
+InitUG(3, AlgebraType("CPU", 1))
 
 -- choice of grid
-gridName = "camh36.ugx"
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/camh36.ugx")
 
 -- total refinements
-numRefs = util.GetParamNumber("-numRefs",    0)
+numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- choose length of maximal time step during the whole simulation
-timeStep = util.GetParamNumber("-tstep", 0.01)
+timeStep = util.GetParamNumber("-tstep", 1e-02)
 
 -- choose length of time step at the beginning
 -- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
-timeStepStart = util.GetParamNumber("-tstepStart", timeStep)
+timeStepStart = util.GetParamNumber("-tstepStart", 1e-05)
 function log2(x)
 	return math.log(x)/math.log(2)
 end
@@ -243,6 +238,7 @@ cytVol = "cyt"
 erVol = "er"
 
 plMem = "mem_cyt, syn1, syn2, syn3"
+plMem_vec = {"mem_cyt", "syn1", "syn2", "syn3"}
 
 erMem = "mem_er"
 --[[
@@ -268,31 +264,20 @@ approxSpace:print_statistic()
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
-print ("Setting up Assembling")
-
-if dim == 2 then 
-    upwind = NoUpwind2d()
-elseif dim == 3 then 
-    upwind = NoUpwind3d()
-end
-
-elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
+elemDiscER = ConvectionDiffusionFV1("ca_er", erVol) 
 elemDiscER:set_diffusion(D_cae)
-elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol, "fv1")
+elemDiscCYT = ConvectionDiffusionFV1("ca_cyt", cytVol)
 elemDiscCYT:set_diffusion(D_cac)
-elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", cytVol, "fv1")
+elemDiscIP3 = ConvectionDiffusionFV1("ip3", cytVol)
 elemDiscIP3:set_diffusion(D_ip3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
-elemDiscIP3:set_upwind(upwind)
 
-elemDiscf2ff = ConvectionDiffusion("f2ff", cytVol, "fv1")
+elemDiscf2ff = ConvectionDiffusionFV1("f2ff", cytVol)
 elemDiscf2ff:set_diffusion(D_f2ff)
-elemDiscf2ff:set_upwind(upwind)
+
 
 ---------------------------------------
 -- setup reaction terms of buffering --
@@ -328,16 +313,16 @@ leakER:set_scale_inputs({1e3,1e3})
 leakER:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
 
-innerDiscIP3R = TwoSidedMembraneTransportFV1(erMem, ip3r)
+innerDiscIP3R = MembraneTransportFV1(erMem, ip3r)
 innerDiscIP3R:set_density_function("IP3Rdensity")
 
-innerDiscRyR = TwoSidedMembraneTransportFV1(erMem, ryr)
+innerDiscRyR = MembraneTransportFV1(erMem, ryr)
 innerDiscRyR:set_density_function("RYRdensity")
 
-innerDiscSERCA = TwoSidedMembraneTransportFV1(erMem, serca)
+innerDiscSERCA = MembraneTransportFV1(erMem, serca)
 innerDiscSERCA:set_density_function("SERCAdensity")
 
-innerDiscLeak = TwoSidedMembraneTransportFV1(erMem, leakER)
+innerDiscLeak = MembraneTransportFV1(erMem, leakER)
 innerDiscLeak:set_density_function("LEAKERconstant") -- from mol/(um^2 s M) to m/s
 
 ------------------------------
@@ -365,6 +350,9 @@ leakPM:set_constant(0, 1.0)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
+voltageFilesInterval = 0.001
+firstVoltageFile = 0.0
+lastVoltageFile = 0.199
 vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
 					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
 					 "%.3f", ".dat", false)
@@ -372,19 +360,19 @@ vdcc:set_constant(1, 1.5)
 vdcc:set_scale_inputs({1e3,1.0})
 vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
-vdcc:set_file_times(0.001, 0.0)
+vdcc:set_file_times(voltageFilesInterval, 0.0)
 vdcc:init(0.0)
 
-neumannDiscPMCA = TwoSidedMembraneTransportFV1(plMem, pmca)
+neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
 
-neumannDiscNCX = TwoSidedMembraneTransportFV1(plMem, ncx)
+neumannDiscNCX = MembraneTransportFV1(plMem, ncx)
 neumannDiscNCX:set_density_function(ncxDensity)
 
-neumannDiscLeak = TwoSidedMembraneTransportFV1(plMem, leakPM)
+neumannDiscLeak = MembraneTransportFV1(plMem, leakPM)
 neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.0-1e3*ca_cyt_init))
 
-neumannDiscVGCC = TwoSidedMembraneTransportFV1(plMem, vdcc)
+neumannDiscVGCC = MembraneTransportFV1(plMem, vdcc)
 neumannDiscVGCC:set_density_function(vgccDensity)
 
 ------------------------------------------
@@ -575,16 +563,6 @@ while endTime-time > 0.001*dt do
 	
 	-- setup time disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
-	
-	-- prepare Newton solver
-	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
-	
-	-- prepare BG channel state
-	if time+dt >= firstVoltageFile and time+dt <= lastVoltageFile then
-		vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
-		neumannDiscVGCC:update_potential(vm_time)	
-	end
-	neumannDiscVGCC:update_gating(time+dt)
 	
 	-- apply Newton solver
 	newton_fail = false

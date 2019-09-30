@@ -1,15 +1,12 @@
-----------------------------------------------------------
--- Test script for development of morphology generator  --
---                                                      --
--- Author:  Markus Breit                                --
--- Date:    2016-08-09                                  --
-----------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Test script for development of morphology generator                        --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2016-08-09                                                         --
+--------------------------------------------------------------------------------
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")
-
--- init with dimension and algebra
-InitUG(2, AlgebraType("CPU", 1));
 
 -- choice of grid
 gridName = util.GetParam("-grid", "../grids/modelDendrite.ugx")

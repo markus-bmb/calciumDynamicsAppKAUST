@@ -1,8 +1,16 @@
---------------------------------------------------------------
--- Bouton simulation for Ranjita                            --
---                                                          --
--- Author: Markus Breit                                     --
---------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Bouton example simulation for Ranjita                                      --
+-- This script simulates calcium dynamics within a half-sperical bouton that  --
+-- is activated by a VDCC influx caused by a stimulating AP train.            --
+-- Apart from the influx, calcium dynamics comprise PMCA and NCX pumps in the --
+-- plasma membrane as well as an ER and RyR and SERCA transport across its    --
+-- membrane.                                                                  --
+-- There also is a Dirichlet constraint on the boundary, which is probably a  --
+-- bad idea.                                                                  --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-07-04                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)
@@ -12,7 +20,7 @@ ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
 -- choose dimension and algebra
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
  
 -- choose outfile directory
 fileName = util.GetParam("-outName", "boutonTest")
@@ -29,14 +37,14 @@ end
 gridName = util.GetParam("-grid", defaultGrid)
 
 -- total refinements
-numRefs = util.GetParamNumber("-numRefs",    0)
+numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- choose length of maximal time step during the whole simulation
-timeStep = util.GetParamNumber("-tstep", 0.01)
+timeStep = util.GetParamNumber("-tstep", 1e-04)
 
 -- choose length of time step at the beginning
 -- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
-timeStepStart = util.GetParamNumber("-tstepStart", timeStep)
+timeStepStart = util.GetParamNumber("-tstepStart", 1e-05)
 function log2(x)
 	return math.log(x)/math.log(2)
 end
@@ -84,19 +92,21 @@ dom = util.CreateDomain(gridName, numRefs, reqSubsets)
 
 -- in parallel environments: use a load balancer to distribute the grid
 balancer.partitioner = "parmetis"
-
--- protect ER membrane from being cut by partitioning
-ccw = SubsetCommunicationWeights(dom)
-ccw:set_weight_on_subset(100000.0, 4) -- ER membrane
-balancer.communicationWeights = ccw
-
 balancer.staticProcHierarchy = true
 balancer.firstDistLvl = -1
 balancer.redistSteps = 0
 
-balancer.ParseParameters()
-balancer.PrintParameters()
 loadBalancer = balancer.CreateLoadBalancer(dom)
+if loadBalancer ~= nil then
+	mu = ManifoldUnificator(dom)
+	mu:add_protectable_subsets("mem_er")
+	cdgm = ClusteredDualGraphManager()
+	cdgm:add_unificator(SiblingUnificator())
+	cdgm:add_unificator(mu)
+	balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+	balancer.qualityRecordName = "coarse"
+	balancer.Rebalance(dom, loadBalancer)
+end
 
 if loadBalancer ~= nil then
 	balancer.Rebalance(dom, loadBalancer)
@@ -107,10 +117,7 @@ end
 
 print(dom:domain_info():to_string())
 --[[
---print("Saving domain grid and hierarchy.")
---SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
-print("Saving parallel grid layout")
+--SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
