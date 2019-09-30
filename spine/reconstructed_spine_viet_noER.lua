@@ -1,11 +1,10 @@
---------------------------------------------------------------
---  Example script for simulation on 3d reconstructed spine --
---  without spine endoplasmic reticulum                     --
---  using a simple adaptive time stepping method.           --
---                                                          --
---  Author: Markus Breit                                    --
---  Date: 2019-05-17                                        --
---------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Example script for calcium simulations on a 3d reconstructed spine without --
+-- spine endoplasmic reticulum using a simple adaptive time stepping method.  --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date: 2019-05-17                                                           --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(false)
@@ -17,16 +16,16 @@ ug_load_script("util/load_balancing_util.lua")
 AssertPluginsLoaded({"neuro_collection", "MembranePotentialMapping"})
 
 -- choose dimension and algebra
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 -- choice of grid
-gridName = util.GetParam("-grid", "reconstructed_spine.ugx")
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/reconstructed_spine.ugx")
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- choose length of maximal time step during the whole simulation
-timeStep = util.GetParamNumber("-tstep", 0.01)
+timeStep = util.GetParamNumber("-tstep", 1e-04)
 
 -- choose length of time step at the beginning
 -- if not timeStepStart = 2^(-n)*timeStep, take nearest lower number of that form
@@ -54,9 +53,9 @@ end
 solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
-validSolverIDs["GMG"] = 0;
-validSolverIDs["GS"] = 0;
-validSolverIDs["ILU"] = 0;
+validSolverIDs["GMG"] = 0
+validSolverIDs["GS"] = 0
+validSolverIDs["ILU"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end

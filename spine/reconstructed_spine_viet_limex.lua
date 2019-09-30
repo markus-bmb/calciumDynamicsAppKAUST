@@ -1,11 +1,10 @@
---------------------------------------------------------------
---  Example script for simulation on 3d reconstructed spine --
---  using LIMEX for time stepping and treatment of non-     --
---  linearities.                                            --
---                                                          --
---  Author: Markus Breit                                    --
---  Date: 2018-05-24                                        --
---------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Example script for calcium simulations on a 3d reconstructed spine using   --
+-- LIMEX for time stepping and treatment of non-linearities.                  --
+--                                                                            --
+--  Author: Markus Breit                                                      --
+--  Date: 2019-07-11                                                          --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(false)
@@ -15,16 +14,16 @@ ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
 -- choose dimension and algebra
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 -- choice of grid
-gridName = util.GetParam("-grid", "reconstructed_spine.ugx")
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/reconstructed_spine.ugx")
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- choose length of maximal time step during the whole simulation
-dt = util.GetParamNumber("-dt", 0.01)
+dt = util.GetParamNumber("-dt", 1e-05)
 
 -- choose end time
 endTime = util.GetParamNumber("-endTime")
@@ -39,9 +38,9 @@ end
 solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
-validSolverIDs["GMG"] = 0;
-validSolverIDs["GS"] = 0;
-validSolverIDs["ILU"] = 0;
+validSolverIDs["GMG"] = 0
+validSolverIDs["GS"] = 0
+validSolverIDs["ILU"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
@@ -61,6 +60,7 @@ generateVTKoutput = util.HasParamOption("-vtk")
 
 -- choose plotting interval
 pstep = util.GetParamNumber("-pstep", dt, "plotting interval")
+
 
 ---------------
 -- constants --
@@ -168,8 +168,6 @@ end
 -- setup approximation space --
 -------------------------------
 -- create, load, refine and distribute domain
-print("create, refine and distribute domain")
-
 reqSubsets = {"cyt", "er", "pm", "erm", "syn", "meas_dend", "meas_neck", "meas_head"}
 dom = util.CreateDomain(gridName, 0, reqSubsets)
 
@@ -213,10 +211,7 @@ print(dom:domain_info():to_string())
 
 
 --[[
---print("Saving domain grid and hierarchy.")
---SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
-print("Saving parallel grid layout")
+SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 2.0)
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 2.0)
 --]]
 
@@ -444,7 +439,7 @@ else -- (solverID == "GMG")
 	gmg:set_cycle_type(1)
 	gmg:set_num_presmooth(3)
 	gmg:set_num_postsmooth(3)
-	--gmg:set_rap(true) -- causes error in base solver!!
+	gmg:set_rap(true)
 	--gmg:set_debug(GridFunctionDebugWriter(approxSpace))
 	
     bcgs_steps = 1000
@@ -518,13 +513,13 @@ limex:set_stepsize_greedy_order_factor(1)
 limex:set_stepsize_safety_factor(0.25)
 
 -- GridFunction error estimator (relative norm)
-errorEvalCa = SupErrorEvaluator("ca_cyt", "cyt") -- function name, subset names
-errorEvalCaE = SupErrorEvaluator("ca_er", "er") -- function name, subset names
-errorEvalClb = SupErrorEvaluator("clb", "cyt") -- function name, subset names
-errorEvalIP3 = SupErrorEvaluator("ip3", "cyt") -- function name, subset names
-errorEvalC1 = SupErrorEvaluator("c1", "erm") -- function name, subset names
-errorEvalC2 = SupErrorEvaluator("c2", "erm") -- function name, subset names
-errorEvalO2 = SupErrorEvaluator("o2", "erm") -- function name, subset names
+errorEvalCa = H1ComponentSpace("ca_cyt", "cyt", 3) -- function name, subset names
+errorEvalCaE = H1ComponentSpace("ca_er", "er", 3) -- function name, subset names
+errorEvalClb = H1ComponentSpace("clb", "cyt", 3) -- function name, subset names
+errorEvalIP3 = H1ComponentSpace("ip3", "cyt", 3) -- function name, subset names
+errorEvalC1 = L2ComponentSpace("c1", 3, 1.0, "erm") -- function name, subset names
+errorEvalC2 = L2ComponentSpace("c2", 3, 1.0, "erm") -- function name, subset names
+errorEvalO2 = L2ComponentSpace("o2", 3, 1.0, "erm") -- function name, subset names
 limexEstimator = ScaledGridFunctionEstimator()
 limexEstimator:add(errorEvalCa)
 limexEstimator:add(errorEvalCaE)

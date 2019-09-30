@@ -1,8 +1,12 @@
---------------------------------------------------------------
---  Example script for simulation on 3d spine model			--
---                                                          --
---  Author: Markus Breit                                    --
---------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This script simulates the calcium dynamics in a synaptic spine following   --
+-- a synaptic activation. It assumes that calcium can only enter the cell     --
+-- through the PSD from the synaptic cleft, which is modeled as a limited     --
+-- reservoir.                                                                 --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2018-05-23                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)
@@ -12,39 +16,15 @@ ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
 
--- save this script to whereever it is executed
--- (esp. useful for batch jobs)
-function save_script()
-	if ProcRank() == 0 then
-		local fileNameWithPath = (debug.getinfo(2, "S")).source:sub(2)
-		local fileName = string.match(fileNameWithPath, "([^\\/]-%.?[^%.\\/]*)$")
-		
-		local infile = io.open(fileNameWithPath, "r")
-		local instr = infile:read("*a")
-		infile:close()
-		
-		local outfile = io.open(fileName, "w")
-		outfile:write(instr)
-		outfile:close()
-	end
-end
-save_script()
-
-
--- dimension
-dim = 3
-
 -- choose dimension and algebra
-InitUG(dim, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
  
 -- choose outfile directory
-fileName = util.GetParam("-outName", "rc19test")
-fileName = fileName.."/"
+outPath = util.GetParam("-outName", "rc19test")
+outPath = outPath.."/"
 
 -- choice of grid
 gridName = util.GetParam("-grid", "calciumDynamics_app/grids/spineWithCleft_0.8.ugx")
-
-PclDebugBarrierAll()
 
 
 -- which ER mechanisms are to be activated?
@@ -448,7 +428,7 @@ op:init()
 ------------------
 -- debug writer
 dbgWriter = GridFunctionDebugWriter(approxSpace)
-dbgWriter:set_base_dir(fileName)
+dbgWriter:set_base_dir(outPath)
 dbgWriter:set_vtk_output(false)
 
 -- biCGstab --
@@ -533,10 +513,10 @@ step = 0
 
 if (generateVTKoutput) then
 	out = VTKOutput()
-	out:print(fileName .. "vtk/result", u, step, time)
+	out:print(outPath .. "vtk/result", u, step, time)
 end
 
-take_measurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+take_measurement(u, time, measZones, "ca_cyt, ip3, clb", outPath .. "meas/data")
 
 
 -- create new grid function for old value
@@ -596,11 +576,11 @@ while endTime-time > 0.001*dt do
 		-- plot solution every plotStep seconds
 		if (generateVTKoutput) then
 			if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-				out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+				out:print(outPath .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
 			end
 		end
 		
-		take_measurement(u, time, measZones, "ca_cyt, ip3, clb", fileName .. "meas/data")
+		take_measurement(u, time, measZones, "ca_cyt, ip3, clb", outPath .. "meas/data")
 		
 		-- get oldest solution
 		oldestSol = solTimeSeries:oldest()
@@ -617,4 +597,4 @@ while endTime-time > 0.001*dt do
 end
 
 -- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
+if (generateVTKoutput) then out:write_time_pvd(outPath .. "vtk/result", u) end

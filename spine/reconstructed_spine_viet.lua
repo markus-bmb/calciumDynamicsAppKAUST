@@ -1,11 +1,10 @@
---------------------------------------------------------------
---  Example script for simulation on 3d reconstructed spine --
---  with spine endoplasmic reticulum                        --
---  using a simple adaptive time stepping method.           --
---                                                          --
---  Author: Markus Breit                                    --
---  Date: 2018-05-24                                        --
---------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Example script for calcium simulations on a 3d reconstructed spine using   --
+-- a simple time stepping.                                                    --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date: 2019-05-15                                                           --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(false)
@@ -17,10 +16,10 @@ ug_load_script("util/load_balancing_util.lua")
 AssertPluginsLoaded({"neuro_collection"})
 
 -- choose dimension and algebra
-InitUG(3, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 -- choice of grid
-gridName = util.GetParam("-grid", "reconstructed_spine.ugx")
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/reconstructed_spine.ugx")
 
 -- total refinements
 numRefs = util.GetParamNumber("-numRefs", 0)
@@ -54,9 +53,9 @@ end
 solverID = util.GetParam("-solver", "GS")
 solverID = string.upper(solverID)
 validSolverIDs = {}
-validSolverIDs["GMG"] = 0;
-validSolverIDs["GS"] = 0;
-validSolverIDs["ILU"] = 0;
+validSolverIDs["GMG"] = 0
+validSolverIDs["GS"] = 0
+validSolverIDs["ILU"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
@@ -181,6 +180,7 @@ function neumannBndIP3(x, y, z, t, si)
 	end
     return influx
 end
+
 
 -------------------------------
 -- setup approximation space --
@@ -589,7 +589,7 @@ while endTime-time > 0.001*dt do
 end
 
 -- end timeseries, produce gathering file
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out:write_time_pvd(fileName .. "vtk/result", u)
 end
 
