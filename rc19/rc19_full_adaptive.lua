@@ -1,8 +1,15 @@
-----------------------------------------------------------------
---  Example script for simulation on 3d reconstructed neuron  --
---                                                            --
---  Author: Markus Breit                                      --
-----------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- This script performs a 3d calcium simulation on a reconstructed plasma     --
+-- membrane of a dendrite and soma morphology that is augmented by an ER.     --
+-- It is supposed to recreate experiments published in:                       --
+-- Branco et al.: "Dendritic discrimination of temporal input sequences in    --
+-- cortical neurons", Science (2010).                                         --
+-- The discretization is adaptive in space and time using a rather crude      --
+-- method to decide when to refine in space and when in time.                 --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2014-09-26                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 SetOutputProfileStats(false)
@@ -11,26 +18,19 @@ SetOutputProfileStats(false)
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
--- dimension
-dim = 3
+AssertPluginsLoaded({"neuro_collection", "ConvectionDiffusion", "Parmetis"})
 
 -- choose dimension and algebra
-InitUG(dim, AlgebraType("CPU", 1));
+InitUG(3, AlgebraType("CPU", 1))
 
 -- choice of grid
-gridName = util.GetParam("-grid", "rc19/rc19amp.ugx")
---gridName = "rc19/rc19_amp_singleDend.ugx"
---gridName = "rc19/rc19_amp_measZones.ugx"
---gridName = "rc19/rc19_amp_new.ugx"
---gridName = "rc19/rc19_amp.ugx"					-- deprecated
---gridName = "rc19/RC19amp_ug4_finished.ugx"		-- dead
---gridName = "simple_reticulum_3d.ugx"				-- for testing
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/rc19amp.ugx")
 
 -- refinements before distributing grid
 numPreRefs = util.GetParamNumber("-numPreRefs", 0)
 
 -- total refinements
-numRefs = util.GetParamNumber("-numRefs",    0)
+numRefs = util.GetParamNumber("-numRefs", 0)
 
 -- choose length of maximal time step during the whole simulation
 timeStep = util.GetParamNumber("-tstep", 0.01)
@@ -61,17 +61,12 @@ end
 plotStep = util.GetParamNumber("-pstep", 0.01)
 
 -- choose solver setup
-solverID = util.GetParam("-solver", "GS")
+solverID = util.GetParam("-solver", "GMG")
 solverID = string.upper(solverID)
 validSolverIDs = {}
-validSolverIDs["GMG-GS"] = 0
-validSolverIDs["GMG-ILU"] = 0
-validSolverIDs["GMG-LU"] = 0
-validSolverIDs["GMG-SLU"] = 0
---validSolverIDs["AMG-LU"] = 0
+validSolverIDs["GMG"] = 0
 validSolverIDs["GS"] = 0
 validSolverIDs["ILU"] = 0
-validSolverIDs["JAC"] = 0
 if (validSolverIDs[solverID] == nil) then
     error("Unknown solver identifier " .. solverID)
 end
@@ -82,9 +77,12 @@ order = util.GetParamNumber("-synOrder", 0)
 -- choose time between synaptic stimulations (in ms)
 jump = util.GetParamNumber("-jumpTime", 5)
 
+-- specify "-verbose" to output linear solver convergence
+verbose	= util.HasParamOption("-verbose")
+
 -- choose outfile directory
-fileName = util.GetParam("-outName", "rc19test")
-fileName = fileName.."/"
+outPath = util.GetParam("-outName", "rc19test")
+outPath = outPath.."/"
 
 -- specify -vtk to generate vtk output
 generateVTKoutput = util.HasParamOption("-vtk")
@@ -114,23 +112,6 @@ ip3_init = 4.0e-8
 clb_init = totalClb / (k_bind_clb/k_unbind_clb*ca_cyt_init + 1)
 
 
--- calmodulin --
-totalClmd = 2*21.9e-6;
-
--- calmodulin diffusion coefficient
-D_clm = 0.25;
-
--- calmodulin binding rates
-k_bind_clmd_c = 	2.3e06
-k_unbind_clmd_c = 	2.4
-k_bind_clmd_n = 	1.6e08
-k_unbind_clmd_n = 	405.0
-
--- initial concentrations
-clmC_init = totalClmd / (k_bind_clmd_c/k_unbind_clmd_c*ca_cyt_init + 1)
-clmN_init = totalClmd / (k_bind_clmd_n/k_unbind_clmd_n*ca_cyt_init + 1)
-
-
 -- reaction reate IP3
 reactionRateIP3 = 0.11
 
@@ -140,10 +121,10 @@ equilibriumIP3 = 4.0e-08
 -- reation term IP3
 reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
+
 ---------------------------------------------------------------------
 -- functions steering tempo-spatial parameterization of simulation --
 ---------------------------------------------------------------------
-
 -- project coordinates on dendritic length from soma (approx.)
 function dendLengthPos(x,y,z)
 	return (0.91*(x-1.35) +0.40*(y+6.4) -0.04*(z+2.9)) / 111.0
@@ -196,8 +177,8 @@ ncxDensity  = 15.0
 vgccDensity = 1.0
 
 leakPMconstant = pmcaDensity * 6.967213114754098e-24 +	-- single pump PMCA flux (mol/s)
-				 ncxDensity *  6.7567567567567554e-23 +	-- single pump NCX flux (mol/s)
-				 vgccDensity * (-1.1110712907810124e-28)    -- single channel VGCC flux (mol/s)
+				 ncxDensity *  6.7567567567567554e-23 	-- single pump NCX flux (mol/s)
+				 --vgccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
 				-- *1.5 // * 0.5 for L-type // T-type
 if leakPMconstant < 0 then error("PM leak flux is outward for these density settings!") end
 
@@ -219,10 +200,10 @@ end
 
 -- burst of calcium influx for active synapses (~1200 ions)
 function ourNeumannBndCA(x, y, z, t, si)
-	if 	(si>=synStart and si<=synStop and syns[si]<t and t<=syns[si]+caEntryDuration)
-	--then efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
-	then efflux = -2e-4
-	else efflux = 0.0
+	local efflux = 0.0
+	if si >= synStart and si <= synStop and syns[si] < t and t <= syns[si] + caEntryDuration then
+		-- efflux = -5e-6 * 11.0/16.0*(1.0+5.0/((10.0*(t-syns["start"..si])+1)*(10.0*(t-syns["start"..si])+1)))
+		efflux = -2e-4
 	end
     return -efflux
 end
@@ -232,48 +213,39 @@ end
 ip3EntryDelay = 0.000
 ip3EntryDuration = 2.0
 function ourNeumannBndIP3(x, y, z, t, si)
-	if 	(si>=synStart and si<=synStop and syns[si]+ip3EntryDelay<t and t<=syns[si]+ip3EntryDelay+ip3EntryDuration)
-	then efflux = - 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
-	else efflux = 0.0
+	local efflux = 0.0
+	if si >= synStart and si <= synStop and syns[si] + ip3EntryDelay < t and t <= syns[si] + ip3EntryDelay + ip3EntryDuration then
+		efflux = - 2.1e-5/1.188 * (1.0 - (t-syns[si])/ip3EntryDuration)
 	end
     return -efflux
 end
+
 
 -------------------------------
 -- setup approximation space --
 -------------------------------
 -- create, load, refine and distribute domain
-print("create, refine and distribute domain")
+dom = util.CreateDomain(gridName, 0)
 
---[[
-neededSubsets = {}
-distributionMethod = "metisReweigh"
-weightingFct = InterSubsetPartitionWeighting()
-weightingFct:set_default_weights(1,1)
-weightingFct:set_inter_subset_weight(0, 1, 1000)
-dom = util.CreateAndDistributeDomain(gridName, numRefs, numPreRefs, neededSubsets, distributionMethod, nil, nil, nil, weightingFct)
---]]
-
-dom = util.CreateDomain(gridName, 0, neededSubsets)
-
-balancer.partitioner = "parmetis"
-ccw = SubsetCommunicationWeights(dom)
-ccw:set_weight_on_subset(10000,4)
-balancer.communicationCostWeights = ccw
-
-balancer.staticProcHierarchy = true
-balancer.redistProcs = 64
-balancer.firstDistLvl = 0
-balancer.parallelElementThreshold = 24
-balancer.maxLvlsWithoutRedist = 1
-balancer.ParseParameters()
-balancer.PrintParameters()
-
-write(">> distributing and refining domain ...\n")
 -- in parallel environments: use a load balancer to distribute the grid
+balancer.partitioner = "parmetis"
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl = 0
+balancer.firstDistProcs = 64
+balancer.redistSteps = 1
+balancer.redistProcs = 32
+
 loadBalancer = balancer.CreateLoadBalancer(dom)
-balancer.RefineAndRebalanceDomain(dom, numRefs, loadBalancer)
-write(">> distributing done\n")
+if loadBalancer ~= nil then
+	mu = ManifoldUnificator(dom)
+	mu:add_protectable_subsets("mem_er")
+	cdgm = ClusteredDualGraphManager()
+	cdgm:add_unificator(SiblingUnificator())
+	cdgm:add_unificator(mu)
+	balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+	balancer.qualityRecordName = "coarse"
+	balancer.Rebalance(dom, loadBalancer)
+end
 
 print(dom:domain_info():to_string())
 
@@ -281,19 +253,12 @@ if load_balancer ~= nil then
 	loadBalancer:print_quality_records()
 end
 
-
 --[[
---print("Saving domain grid and hierarchy.")
---SaveDomain(dom, "refined_grid_p" .. ProcRank() .. ".ugx")
---SaveGridHierarchyTransformed(dom:grid(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
-print("Saving parallel grid layout")
+SaveGridHierarchyTransformed(dom:grid(), dom:subset_handler(), "refined_grid_hierarchy_p" .. ProcRank() .. ".ugx", 20.0)
 SaveParallelGridLayout(dom:grid(), "parallel_grid_layout_p"..ProcRank()..".ugx", 20.0)
 --]]
 
 -- create approximation space
-print("Create ApproximationSpace")
-approxSpace = ApproximationSpace(dom)
-
 cytVol = "cyt"
 measZones = ""
 --for i=1,15 do
@@ -325,14 +290,15 @@ erMem = erMem .. ", " .. measZonesERM
 outerDomain = cytVol .. ", " .. nucVol .. ", " .. nucMem .. ", " .. plMem .. ", " .. erMem
 innerDomain = erVol .. ", " .. erMem
 
+approxSpace = ApproximationSpace(dom)
 approxSpace:add_fct("ca_er", "Lagrange", 1, innerDomain)
 approxSpace:add_fct("ca_cyt", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("ip3", "Lagrange", 1, outerDomain)
 approxSpace:add_fct("clb", "Lagrange", 1, outerDomain)
 
 approxSpace:init_levels()
-approxSpace:print_layout_statistic()
 approxSpace:print_statistic()
+
 
 ----------------------------
 -- setup error estimators --
@@ -349,43 +315,30 @@ eeMult:add(eeIP3, "ip3")
 eeMult:add(eeClb, "clb")
 eeMult:set_consider_me(false) -- not necessary (default)
 
+
 ----------------------------------------------------------
 -- setup FV convection-diffusion element discretization --
 ----------------------------------------------------------
-print ("Setting up Assembling")
-
--- Note: No VelocityField and Reaction is set. The assembling assumes default
---       zero values for them
-
-if dim == 2 then 
-    upwind = NoUpwind2d()
-elseif dim == 3 then 
-    upwind = NoUpwind3d()
-end
-
-elemDiscER = ConvectionDiffusion("ca_er", erVol, "fv1") 
+elemDiscER = ConvectionDiffusionFV1("ca_er", erVol) 
 elemDiscER:set_diffusion(D_cae)
-elemDiscER:set_upwind(upwind)
 
-elemDiscCYT = ConvectionDiffusion("ca_cyt", cytVol..", "..nucVol, "fv1")
+elemDiscCYT = ConvectionDiffusionFV1("ca_cyt", cytVol..", "..nucVol)
 elemDiscCYT:set_diffusion(D_cac)
-elemDiscCYT:set_upwind(upwind)
 
-elemDiscIP3 = ConvectionDiffusion("ip3", cytVol..", "..nucVol, "fv1")
+elemDiscIP3 = ConvectionDiffusionFV1("ip3", cytVol..", "..nucVol)
 elemDiscIP3:set_diffusion(D_ip3)
 elemDiscIP3:set_reaction_rate(reactionRateIP3)
 elemDiscIP3:set_reaction(reactionTermIP3)
-elemDiscIP3:set_upwind(upwind)
 
-elemDiscClb = ConvectionDiffusion("clb", cytVol..", "..nucVol, "fv1")
+elemDiscClb = ConvectionDiffusionFV1("clb", cytVol..", "..nucVol)
 elemDiscClb:set_diffusion(D_clb)
-elemDiscClb:set_upwind(upwind)
 
 -- error estimators
 elemDiscER:set_error_estimator(eeCaER)
 elemDiscCYT:set_error_estimator(eeCaCyt)
 elemDiscIP3:set_error_estimator(eeIP3)
 elemDiscClb:set_error_estimator(eeClb)
+
 
 ---------------------------------------
 -- setup reaction terms of buffering --
@@ -400,10 +353,10 @@ elemDiscBuffering:add_reaction(
 
 elemDiscBuffering:set_error_estimator(eeMult)
 
+
 ----------------------------------------------------
 -- setup inner boundary (channels on ER membrane) --
 ----------------------------------------------------
-
 -- We pass the function needed to evaluate the flux function here.
 -- The order, in which the discrete fcts are passed, is crucial!
 ip3r = IP3R({"ca_cyt", "ca_er", "ip3"})
@@ -441,9 +394,9 @@ innerDiscRyR:set_error_estimator(eeMult)
 innerDiscSERCA:set_error_estimator(eeMult)
 innerDiscLeak:set_error_estimator(eeMult)
 
-------------------------------
--- setup Neumann boundaries --
-------------------------------
+----------------------------
+-- setup outer boundaries --
+----------------------------
 -- synaptic activity
 neumannDiscCA = UserFluxBoundaryFV1("ca_cyt", plMem)
 neumannDiscCA:set_flux_function("ourNeumannBndCA")
@@ -470,6 +423,7 @@ leakPM:set_constant(0, 1.5)
 leakPM:set_scale_inputs({1.0,1e3})
 leakPM:set_scale_fluxes({1e3}) -- from mol/(m^2 s) to (mol um)/(dm^3 s)
 
+--[[
 vdcc = VDCC_BG_VM2UG({"ca_cyt", ""}, plMem_vec, approxSpace,
 					 "neuronRes/timestep".."_order".. 0 .."_jump"..string.format("%1.1f", 5.0).."_",
 					 "%.3f", ".dat", false)
@@ -479,6 +433,7 @@ vdcc:set_scale_fluxes({1e15}) -- from mol/(um^2 s) to (mol um)/(dm^3 s)
 vdcc:set_channel_type_L() --default, but to be sure
 vdcc:set_file_times(0.001, 0.0)
 vdcc:init(0.0)
+--]]
 
 neumannDiscPMCA = MembraneTransportFV1(plMem, pmca)
 neumannDiscPMCA:set_density_function(pmcaDensity)
@@ -489,14 +444,15 @@ neumannDiscNCX:set_density_function(ncxDensity)
 neumannDiscLeak = MembraneTransportFV1(plMem, leakPM)
 neumannDiscLeak:set_density_function(1e12*leakPMconstant / (1.5-1e3*ca_cyt_init))
 
-neumannDiscVGCC = MembraneTransportFV1(plMem, vdcc)
-neumannDiscVGCC:set_density_function(vgccDensity)
+--neumannDiscVGCC = MembraneTransportFV1(plMem, vdcc)
+--neumannDiscVGCC:set_density_function(vgccDensity)
 
 
 neumannDiscPMCA:set_error_estimator(eeMult)
 neumannDiscNCX:set_error_estimator(eeMult)
 neumannDiscLeak:set_error_estimator(eeMult)
-neumannDiscVGCC:set_error_estimator(eeMult)
+--neumannDiscVGCC:set_error_estimator(eeMult)
+
 
 ------------------------------------------
 -- setup complete domain discretization --
@@ -518,7 +474,7 @@ domainDisc:add(neumannDiscIP3)
 domainDisc:add(neumannDiscPMCA)
 domainDisc:add(neumannDiscNCX)
 domainDisc:add(neumannDiscLeak)
-domainDisc:add(neumannDiscVGCC)
+--domainDisc:add(neumannDiscVGCC) -- not working in adaptive case: missing treatment for Vm and gating attachments
 
 -- ER flux
 domainDisc:add(innerDiscIP3R)
@@ -528,6 +484,7 @@ domainDisc:add(innerDiscLeak)
 
 -- constraints for adatptivity
 domainDisc:add(OneSideP1Constraints())
+
 
 -------------------------------
 -- setup time discretization --
@@ -543,113 +500,56 @@ op:init()
 ------------------
 -- solver setup --
 ------------------
--- create algebraic preconditioner
-jac = Jacobi()
-jac:set_damp(0.8)
-gs = GaussSeidel()
-sgs = SymmetricGaussSeidel()
-bgs = BackwardGaussSeidel()
-ilu = ILU()
-ilut = ILUT()
+-- debug writer
+dbgWriter = GridFunctionDebugWriter(approxSpace)
+dbgWriter:set_vtk_output(false)
 
--- exact solver
-exactSolver = LU()
-superLU = SuperLU()
-
--- geometric multi-grid --
--- base solver
-baseConvCheck = ConvCheck()
-baseConvCheck:set_maximum_steps(1000)
-baseConvCheck:set_minimum_defect(1e-28)
-baseConvCheck:set_reduction(1e-1)
-baseConvCheck:set_verbose(false)
-
-if (solverID == "GMG-LU") then
-    base = exactSolver
-elseif (solverID == "GMG-SLU") then
-    base = superLU
-else
-    base = LinearSolver()
-    base:set_convergence_check(baseConvCheck)
-    if (solverID == "GMG-ILU" or solverID == "SLU") then
-        base:set_preconditioner(ilu)
-    else
-        base:set_preconditioner(gs)
-    end
-end
-
+-- gmg
 gmg = GeometricMultiGrid(approxSpace)
 gmg:set_discretization(timeDisc)
 gmg:set_base_level(0)
-if (solverID == "GMG-LU" or solverID == "SLU") then
-    gmg:set_gathered_base_solver_if_ambiguous(true)
-end
-gmg:set_base_solver(base)
-if (solverID == "GMG-ILU") then
-    gmg:set_smoother(ilu)
-else
-    gmg:set_smoother(gs)
-end 
+gmg:set_base_solver(SuperLU())
+gmg:set_gathered_base_solver_if_ambiguous(true)
+gmg:set_smoother(GaussSeidel())
+gmg:set_smooth_on_surface_rim(true)
 gmg:set_cycle_type(1)
-gmg:set_num_presmooth(10)
+gmg:set_num_presmooth(3)
 gmg:set_num_postsmooth(3)
 gmg:set_rap(true)
-
---[[
--- AMG --
-amg = RSAMGPreconditioner()
-amg:set_num_presmooth(2)
-amg:set_num_postsmooth(2)
-amg:set_cycle_type(1)
-amg:set_presmoother(gs)
-amg:set_postsmoother(gs)
-amg:set_base_solver(base)
---amg:set_debug(u)
---]]
+--gmg:set_debug(dbgWriter)
 
 -- biCGstab --
 convCheck = ConvCheck()
 convCheck:set_minimum_defect(1e-24)
 convCheck:set_reduction(1e-06)
-convCheck:set_verbose(false)
-bicgstabSolver = BiCGStab()
-if (solverID == "ILU") then
-    convCheck:set_maximum_steps(2000)
-    bicgstabSolver:set_preconditioner(ilu)
-elseif (solverID == "GS") then
-    convCheck:set_maximum_steps(2000)
-    bicgstabSolver:set_preconditioner(gs)
-elseif (solverID == "JAC") then
-    convCheck:set_maximum_steps(2000)
-    bicgstabSolver:set_preconditioner(jac)
-else
-    convCheck:set_maximum_steps(500)
-    bicgstabSolver:set_preconditioner(gmg)
-end
-bicgstabSolver:set_convergence_check(convCheck)
+convCheck:set_verbose(verbose)
+convCheck:set_maximum_steps(10000)
 
------------------------
--- non linear solver --
------------------------
--- convergence check
-newtonConvCheck = CompositeConvCheck3dCPU1(approxSpace, 20, 1e-20, 1e-08)
-newtonConvCheck:set_component_check("ip3", 1e-20, 1e-08)
+linearSolver = BiCGStab()
+if solverID == "GS" then
+	linearSolver:set_preconditioner(GaussSeidel())
+elseif solverID == "ILU" then
+	linearSolver:set_preconditioner(ILU())
+else
+	linearSolver:set_preconditioner(gmg)
+	convCheck:set_maximum_steps(100)
+end
+linearSolver:set_convergence_check(convCheck)
+
+
+-- nonlinear convergence check
+newtonConvCheck = CompositeConvCheck(approxSpace, 10, 1e-21, 1e-08)
 newtonConvCheck:set_verbose(true)
 newtonConvCheck:set_time_measurement(true)
 newtonConvCheck:set_adaptive(true)
 
-newtonLineSearch = StandardLineSearch()
-newtonLineSearch:set_maximum_steps(5)
-newtonLineSearch:set_accept_best(true)
-newtonLineSearch:set_verbose(false)
-
 -- Newton solver
 newtonSolver = NewtonSolver()
-newtonSolver:set_linear_solver(bicgstabSolver)
+newtonSolver:set_linear_solver(linearSolver)
 newtonSolver:set_convergence_check(newtonConvCheck)
---newtonSolver:set_line_search(newtonLineSearch)
 
 newtonSolver:init(op)
+
 
 -------------
 -- solving --
@@ -671,16 +571,14 @@ time = 0.0
 step = 0
 
 
-if (generateVTKoutput) then
+if generateVTKoutput then
 	out = VTKOutput()
-	out:print(fileName .. "vtk/result", u, step, time)
+	out:print(outPath .. "vtk/result", u, step, time)
 end
 
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
-TOL = 1e-14
-refineFrac = 0.01
-coarseFrac = 0.9
+TOL = 1e-13
 maxLevel = 6
 maxElem = 7e6
 refStrat = StdRefinementMarking(TOL, maxLevel)
@@ -700,7 +598,7 @@ out_error:clear_selection()
 out_error:select_all(false)
 out_error:select_element("eta_squared", "error")
 
-takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+take_measurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", outPath .. "meas/data")
 
 -- create new grid function for old value
 uOld = u:clone()
@@ -734,19 +632,7 @@ while endTime-time > 0.001*dt do
 	
 	-- setup time Disc for old solutions and timestep
 	timeDisc:prepare_step(solTimeSeries, dt)
-	
-	-- prepare BG channel state
-	--[[
-	if (time+dt<0.2) then
-		vm_time = math.floor((time+dt)/voltageFilesInterval)*voltageFilesInterval	-- truncate to last time that data exists for
-		neumannDiscVGCC:update_potential(vm_time)
-	end
-	neumannDiscVGCC:update_gating(time+dt)
-	--]]
-	
-	-- prepare newton solver
-	if newtonSolver:prepare(u) == false then print ("Newton solver failed at step "..step.."."); exit(); end 
-	
+
 	-- apply newton solver
 	newton_fail = false
 	error_fail = false
@@ -762,7 +648,8 @@ while endTime-time > 0.001*dt do
 		--					   max #refinements)
 		timeDisc:calc_error(u, u_vtk)
 		if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-			out_error:print(fileName .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
+			out_error:print(outPath .. "vtk/error_estimator_"..n, u_vtk, math.floor(time/plotStep+0.5), time)
+			out_error:write_time_pvd(outPath .. "vtk/error_estimator", u_vtk)
 		end
 		
 		changedGrid = false
@@ -784,10 +671,7 @@ while endTime-time > 0.001*dt do
 			
 			-- clear marks in the case where they might have been set (no newton_fail)
 			refiner:clear_marks()
-			
-			-- correction for Borg-Graham channels: have to set back time
-			--neumannDiscVGCC:update_gating(time)
-			
+
 			dt = dt/2
 			lv = lv + 1
 			VecScaleAssign(u, 1.0, solTimeSeries:latest())
@@ -910,14 +794,15 @@ while endTime-time > 0.001*dt do
 			end
 			
 			-- plot solution every plotStep seconds
-			if (generateVTKoutput) then
+			if generateVTKoutput then
 				if math.abs(time/plotStep - math.floor(time/plotStep+0.5)) < 1e-5 then
-					out:print(fileName .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+					out:print(outPath .. "vtk/result", u, math.floor(time/plotStep+0.5), time)
+					out:write_time_pvd(outPath .. "vtk/result", u)
 				end
 			end
 		
 			-- take measurements every timeStep seconds 
-			takeMeasurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", fileName .. "meas/data")
+			take_measurement(u, time, measZonesERM, "ca_cyt, ca_er, ip3, clb", outPath .. "meas/data")
 			
 			-- get oldest solution
 			oldestSol = solTimeSeries:oldest()
@@ -938,10 +823,6 @@ if loadBalancer ~= nil then
 	loadBalancer:print_quality_records()
 end
 
-out_error:write_time_pvd(fileName .. "vtk/error_estimator", u_vtk)
-
--- end timeseries, produce gathering file
-if (generateVTKoutput) then out:write_time_pvd(fileName .. "vtk/result", u) end
 
 --[[
 -- check if profiler is available

@@ -506,7 +506,7 @@ end
 
 -- refiner setup
 refiner = HangingNodeDomainRefiner(dom)
-TOL = 1e-14
+TOL = 1e-13
 maxLevel = 8
 maxElem = 1000000
 refStrat = StdRefinementMarking(TOL, maxLevel)
