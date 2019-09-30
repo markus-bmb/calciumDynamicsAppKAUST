@@ -1,16 +1,15 @@
-------------------------------------------------------------------
--- Examination of calcium wave prerequisites                    --
---                                                              --
--- This script performs a bisection on either ER radius or RyR  --
--- channel density at a given dendritic radius to find out      --
--- threshold values for the creation of a stable calcium wave.  --
--- The actual simulation is performed by the script             --
--- 'wave_exam.lua' which is called in each step of the          --
--- bisection.                                                   --
---                                                              --
--- Author: mbreit                                               --
--- Date:   2017-08-28                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Examination of calcium wave prerequisites                                  --
+--                                                                            --
+-- This script performs a bisection on either ER radius or RyR channel        --
+-- density at a given dendritic radius to find out threshold values for the   --
+-- creation of a stable calcium wave.                                         --
+-- The actual simulation is performed by the script 'wave_exam.lua' which is  --
+-- called in each step of the bisection.                                      --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-08-28                                                         --
+--------------------------------------------------------------------------------
 
 -- load pre-implemented lua functions
 ug_load_script("ug_util.lua")

@@ -1,13 +1,13 @@
-------------------------------------------------------------------
--- Data fitting for the wave ER threshold values.               --
--- The fitting function is given by                             --
---     r(rho) = - c*rho + ((c*rho)^2 + 2bc*rho + R^2) [mode 1]  --
--- or by                                                        --
---     r(rho) = (a*c + b*rho) / (rho - c)             [mode 2]  --
---                                                              --
--- author: mbreit                                               --
--- date:   2017-10-04                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Data fitting for the wave ER threshold values.                             --
+-- The fitting function is given by                                           --
+--     r(rho) = - c*rho + ((c*rho)^2 + 2bc*rho + R^2) [mode 1]                --
+-- or by                                                                      --
+--     r(rho) = (a*c + b*rho) / (rho - c)             [mode 2]                --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-10-04                                                         --
+--------------------------------------------------------------------------------
 
 mode = 1
 

@@ -1,14 +1,13 @@
-------------------------------------------------------------------
--- Examination of calcium wave prerequisites                    --
---                                                              --
--- This script is intended to be used for simulations on 3d     --
--- model dendrites.                                             --
--- The goal of the simulations is to check that the 2d script   --
--- with rotation symmetry works alright.                        --
---                                                              --
--- Author: mbreit                                               --
--- Date:   2017-08-08                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Examination of calcium wave prerequisites                                  --
+--                                                                            --
+-- This script is intended to be used for simulations on 3d model dendrites.  --
+-- The goal of the simulations is to check that the 2d script with rotation   --
+-- symmetry works alright.                                                    --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-08-08                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)

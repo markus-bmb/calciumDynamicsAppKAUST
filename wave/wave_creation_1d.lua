@@ -1,16 +1,14 @@
-------------------------------------------------------------------
--- Examination of calcium wave prerequisites                    --
---                                                              --
--- This script is intended to be used for simulations on 1d     --
--- representations of perfectly rotationally symmetric model    --
--- dendrites.                                                   --
--- The goal of the simulations is to find out whether the 2d    --
--- rotationally symmetric case can be even further reduced to   --
--- this 1d case.                                                --
---                                                              --
--- Author: mbreit                                               --
--- Date:   2017-08-14                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Examination of calcium wave prerequisites                                  --
+--                                                                            --
+-- This script is intended to be used for simulations on 1d representations   --
+-- of perfectly rotationally symmetric model dendrites.                       --
+-- The goal of the simulations is to find out whether the 2d rotationally     --
+-- symmetric case can be even further reduced to this 1d case.                --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-08-14                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)

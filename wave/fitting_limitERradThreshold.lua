@@ -1,11 +1,11 @@
-------------------------------------------------------------------
--- Least squares fit for limit ER radius threshold              --
--- Fitting function is of the form                              --
---   r(rho) = (c + b*rho) / (rho - a).                          --
---                                                              --
--- Author: mbreit                                               --
--- Date:   2017-09-21                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Least squares fit for limit ER radius threshold                            --
+-- Fitting function is of the form                                            --
+--   r(rho) = (c + b*rho) / (rho - a).                                        --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2017-09-21                                                         --
+--------------------------------------------------------------------------------
 
 --[[
 limitRad = {}

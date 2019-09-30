@@ -1,17 +1,15 @@
-------------------------------------------------------------------
--- Examination of calcium wave prerequisites                    --
---                                                              --
--- This script is intended to be used for simulations on 2d     --
--- representations of perfectly rotationally symmetric model    --
--- dendrites.                                                   --
--- Ryanodin rceptors are not assumed uniformly distributed as   --
--- usual, but are integrated in the geometry as discrete        --
--- entities.
--- The LIMEX method is used for time stepping.                  --
---                                                              --
--- Author: mbreit                                               --
--- Date:   2018-06-13                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Examination of calcium wave prerequisites                                  --
+--                                                                            --
+-- This script is intended to be used for simulations on 2d representations   --
+-- of perfectly rotationally symmetric model dendrites.                       --
+-- Ryanodin rceptors are not assumed uniformly distributed as usual, but are  --
+-- integrated in the geometry as discrete entities.                           --
+-- The LIMEX method is used for time stepping.                                --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2018-06-13                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)

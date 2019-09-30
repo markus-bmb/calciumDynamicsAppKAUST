@@ -1,17 +1,14 @@
-------------------------------------------------------------------
--- Examination of calcium wave prerequisites                    --
---                                                              --
--- This script is intended to be used for simulations on 2d     --
--- representations of perfectly rotationally symmetric model    --
--- dendrites. It is supposed to be called by the script         --
--- 'wave_exam_batch.lua' during a bisection to find thresholds  --
--- for ER radius and RyR channel density above which a calcium  --
--- wave is elicited.                                            --
--- The LIMEX method is used for time stepping.                  --
---                                                              --
--- Author: mbreit                                               --
--- Date:   2017-08-29                                           --
-------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- Examination of calcium wave prerequisites                                  --
+--                                                                            --
+-- This script is intended to be used for simulations on 1d representations   --
+-- of perfectly rotationally symmetric model dendrites.                       --
+-- It is the 1d counterpart for the script 'wave_exam.lua".                   --
+-- The LIMEX method is used for time stepping.                                --
+--                                                                            --
+-- Author: Markus Breit                                                       --
+-- Date:   2019-01-30                                                         --
+--------------------------------------------------------------------------------
 
 -- for profiler output
 --SetOutputProfileStats(true)
