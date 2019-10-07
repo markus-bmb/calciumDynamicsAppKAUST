@@ -18,6 +18,8 @@
 ug_load_script("ug_util.lua")
 ug_load_script("util/load_balancing_util.lua")
 
+AssertPluginsLoaded({"neuro_collection", "Parmetis"})
+
 -- dimension
 dim = 3
 
@@ -294,31 +296,28 @@ else
 	reqSubsets = {"cyt", "er", "mem_cyt", "mem_er", "syn", "measZone_dend", "measZone_neck", "measZone_head"}
 end	
 dom = util.CreateDomain(gridName, 0, reqSubsets)
-balancer.partitioner = "parmetis"
-ccw = SubsetCommunicationWeights(dom)
--- protect ER membrane from being cut by partitioning
-if buildApp then
-	ccw:set_weight_on_subset(100000.0, 4) -- mem_er
-	ccw:set_weight_on_subset(100000.0, 5) -- mem_app
-else
-	ccw:set_weight_on_subset(100000.0, 3) -- mem_er
-end
-balancer.communicationWeights = ccw
-
-balancer.staticProcHierarchy = true
-balancer.firstDistLvl		= -1
-balancer.redistSteps		= 0
-
-balancer.ParseParameters()
-balancer.PrintParameters()
 
 -- in parallel environments: use a load balancer to distribute the grid
 -- actual refinement and load balancing after setup of disc.
-loadBalancer = balancer.CreateLoadBalancer(dom)
+balancer.partitioner = "parmetis"
+balancer.staticProcHierarchy = true
+balancer.firstDistLvl = -1
+balancer.redistSteps = 0
 
--- refining and distributing
--- manual refinement (need to update interface node location in each step)
+loadBalancer = balancer.CreateLoadBalancer(dom)
 if loadBalancer ~= nil then
+	if balancer.partitioner == "parmetis" then
+		mu = ManifoldUnificator(dom)
+		if buildApp then
+			mu:add_protectable_subsets("mem_er, mem_app")
+		else
+			mu:add_protectable_subsets("mem_er")
+		end
+		cdgm = ClusteredDualGraphManager()
+		cdgm:add_unificator(SiblingUnificator())
+		cdgm:add_unificator(mu)
+		balancer.defaultPartitioner:set_dual_graph_manager(cdgm)
+	end
 	balancer.Rebalance(dom, loadBalancer)
 end
 
