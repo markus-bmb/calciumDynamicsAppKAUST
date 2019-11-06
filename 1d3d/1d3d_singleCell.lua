@@ -381,7 +381,7 @@ loadBalancer = balancer.CreateLoadBalancer(dom3d)
 -- refining and distributing
 -- manual refinement (need to update interface node location in each step)
 if loadBalancer ~= nil then
-	loadBalancer:enable_vertical_interface_creation(false)
+	loadBalancer:enable_vertical_interface_creation(solverID == "GMG")
 	if balancer.partitioner == "parmetis" then
 		mu = ManifoldUnificator(dom3d)
 		mu:add_protectable_subsets("erm")
