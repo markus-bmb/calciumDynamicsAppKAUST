@@ -31,7 +31,7 @@ EnableLUA2C(true)  -- speed up evaluation of lua functions by c program
 -------------------------------------
 
 -- choice of grid
-gridName = util.GetParam("-grid", "../grids/modelDendrite3d.ugx")
+gridName = util.GetParam("-grid", "calciumDynamics_app/grids/modelDendrite3d.ugx")
 
 -- refinements (global)
 numRefs = util.GetParamNumber("-numRefs", 0)
@@ -47,6 +47,9 @@ validSettings["ryr"] = 0;
 if (validSettings[setting] == nil) then
     error("Unknown setting " .. setting)
 end
+
+-- densities
+ryrDens = util.GetParamNumber("-ryrDens", 0.86)
 
 -- choice of solver setup
 solverID = util.GetParam("-solver", "GMG")
@@ -129,7 +132,7 @@ reactionTermIP3 = -reactionRateIP3 * equilibriumIP3
 
 -- ER densities
 IP3Rdensity = 17.3
-RYRdensity = 0.86
+RYRdensity = ryrDens --0.86
 leakERconstant = 3.8e-17
 
 local v_s = 6.5e-27  -- V_S param of SERCA pump
@@ -154,7 +157,7 @@ ncxDensity  = 15.0
 vdccDensity = 0.0  -- 1.0
 leakPMconstant =  pmcaDensity * 6.9672131147540994e-24	-- single pump PMCA flux (mol/s)
 				+ ncxDensity *  6.7567567567567566e-23	-- single pump NCX flux (mol/s)
-				+ vdccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
+				--+ vdccDensity * (-1.5752042094823713e-25)    -- single channel VGCC flux (mol/s)
 				-- *1.5 // * 0.5 for L-type // T-type
 if (leakPMconstant < 0) then error("PM leak flux is outward for these density settings!") end
 
@@ -480,14 +483,14 @@ ryr:calculate_steady_state(u)
 
 -- timestep in seconds
 dtmin = 1e-9
-dtmax = 1e-1
+dtmax = 1e-2
 time = 0.0
 step = 0
 
 -- initial vtk output
 if (generateVTKoutput) then
 	out = VTKOutput()
-	out:print(outDir .. "vtk/solution", u, step, time)
+	out:print(outDir .. "vtk/solution3d", u, step, time)
 end
 
 
@@ -522,7 +525,7 @@ limex:add_error_estimator(limexEstimator)
 
 -- for vtk output
 if (generateVTKoutput) then 
-	local vtkObserver = VTKOutputObserver(outDir .."vtk/solution", out, pstep)
+	local vtkObserver = VTKOutputObserver(outDir .."vtk/solution3d", out, pstep)
 	limex:attach_observer(vtkObserver)
 end
 
@@ -532,7 +535,7 @@ limex:apply(u, endTime, u, time)
 
 
 if (generateVTKoutput) then 
-	out:write_time_pvd(outDir .. "vtk/solution", u)
+	out:write_time_pvd(outDir .. "vtk/solution3d", u)
 end
 
 if doProfiling then
