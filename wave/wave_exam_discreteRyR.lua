@@ -313,14 +313,10 @@ end
 
 
 -- ERM refinements
-strat = SurfaceMarking(dom)
-strat:add_surface("erm", "cyt")
-strat:add_surface("ryr", "cyt")
-
 refiner = HangingNodeDomainRefiner(dom)
 
 for i = 1, numERMRefs do
-	strat:mark_without_error(refiner, approxSpace)
+	MarkAlongSurface(refiner, dom, {"erm", "ryr"}, {"cyt", "cyt"})
 	refiner:refine()
 end
 

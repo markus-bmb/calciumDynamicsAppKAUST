@@ -386,11 +386,9 @@ approxSpace3d:init_top_surface()
 
 
 -- ERM refinements
-strat = SurfaceMarking(dom3d)
-strat:add_surface("erm", "cyt")
 for i = 1, numERMRefs do
 	print("ER membrane refinement " .. i)
-	strat:mark_without_error(refiner, approxSpace3d)
+	MarkAlongSurface(refiner, dom3d, {"erm"}, {"cyt"})
 	refiner:refine()
 	
 	if loadBalancer3d ~= nil then

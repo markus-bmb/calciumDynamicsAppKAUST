@@ -271,13 +271,10 @@ end
 
 
 -- ERM refinements
-strat = SurfaceMarking(2.0, 7)
-strat:add_surface(3,0)	-- erm / outer
-
 refiner = HangingNodeDomainRefiner(dom)
 
 for i = 1, numERMRefs do
-	strat:mark_without_error(refiner, approxSpace)
+	MarkAlongSurface(refiner, dom, {"erm"}, {"cyt"})
 	refiner:refine()
 end
 
