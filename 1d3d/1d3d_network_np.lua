@@ -402,7 +402,7 @@ end
 -- global refinements
 for i = 1, numGlobRefs do
 	print("global refinement " .. i)
-	mark_global(refiner, dom3d)
+	MarkGlobal(refiner, dom3d)
 	refiner:refine()
 
 	if loadBalancer3d ~= nil then

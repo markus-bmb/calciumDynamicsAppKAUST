@@ -289,7 +289,7 @@ end
 
 -- global refinements
 for i = 1, numGlobRefs do
-	mark_global(refiner, dom)
+	MarkGlobal(refiner, dom)
 	refiner:refine()
 end
 
