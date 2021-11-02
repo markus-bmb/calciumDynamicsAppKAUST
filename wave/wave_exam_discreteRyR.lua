@@ -611,10 +611,10 @@ time = 0.0
 step = 0
 
 -- initial vtk output
-if generateVTKoutput then
-	out = VTKOutput()
-	out:print(outDir .. "vtk/solution", u, step, time)
-end
+--if generateVTKoutput then
+--	out = VTKOutput()
+--	out:print(outDir .. "vtk/solution", u, step, time)
+--end
 
 
 ------------------
@@ -796,9 +796,9 @@ if ProcRank() == 0 then
 end
 
 
-if (generateVTKoutput) then 
-	out:write_time_pvd(outDir .. "vtk/solution", u)
-end
+--if (generateVTKoutput) then
+--	out:write_time_pvd(outDir .. "vtk/solution", u)
+--end
 
 
 if doProfiling then

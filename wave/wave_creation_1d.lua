@@ -483,10 +483,10 @@ time = 0.0
 step = 0
 
 -- initial vtk output
-if generateVTKoutput then
-	out = VTKOutput()
-	out:print(outDir .. "vtk/solution", u, step, time)
-end
+--if generateVTKoutput then
+--	out = VTKOutput()
+--	out:print(outDir .. "vtk/solution", u, step, time)
+--end
 
 
 ------------------
@@ -519,7 +519,7 @@ limexEstimator:add(errorEvalC1)
 limex:add_error_estimator(limexEstimator)
 
 -- for vtk output
-if (generateVTKoutput) then 
+if generateVTKoutput then
 	local vtkObserver = VTKOutputObserver(outDir .."vtk/solution", out, pstep)
 	limex:attach_observer(vtkObserver)
 end
@@ -529,9 +529,9 @@ end
 limex:apply(u, endTime, u, time)
 
 
-if (generateVTKoutput) then 
-	out:write_time_pvd(outDir .. "vtk/solution", u)
-end
+--if (generateVTKoutput) then
+--	out:write_time_pvd(outDir .. "vtk/solution", u)
+--end
 
 if doProfiling then
 	WriteProfileData(outDir .."pd.pdxml")

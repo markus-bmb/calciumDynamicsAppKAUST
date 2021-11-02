@@ -481,10 +481,10 @@ time = 0.0
 step = 0
 
 -- initial vtk output
-if (generateVTKoutput) then
-	out = VTKOutput()
-	out:print(outDir .. "vtk/solution", u, step, time)
-end
+--if (generateVTKoutput) then
+--	out = VTKOutput()
+--	out:print(outDir .. "vtk/solution", u, step, time)
+--end
 
 -- initial measurements
 take_measurement(u, time, measZones, "ca_cyt, ip3, clb", outDir .. "meas/data")
@@ -554,9 +554,9 @@ limex:attach_observer(measObserver)
 limex:apply(u, endTime, u, time)
 
 
-if generateVTKoutput then 
-	out:write_time_pvd(outDir .. "vtk/solution", u)
-end
+--if generateVTKoutput then 
+--	out:write_time_pvd(outDir .. "vtk/solution", u)
+--end
 
 
 
