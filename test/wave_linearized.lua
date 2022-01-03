@@ -591,6 +591,8 @@ if numERMRefs > 0 then
 	domDisc:add(hangingConstraint)
 end
 
+assTuner = domDisc:ass_tuner()
+
 -- setup time discretization --
 timeDisc = ThetaTimeStep(domDisc)
 timeDisc:set_theta(1.0) -- 1.0 is implicit Euler
@@ -638,7 +640,7 @@ else -- (solverID == "GMG")
 	gmg:set_cycle_type(1)
 	gmg:set_num_presmooth(3)
 	gmg:set_num_postsmooth(3)
-	--gmg:set_rap(true)
+	gmg:set_rap(true)
 	--gmg:set_debug(GridFunctionDebugWriter(approxSpace))
 	
     bcgs_steps = 100
@@ -754,6 +756,10 @@ while endTime-time > 0.001*dt do
 	timeDisc:prepare_step(solTimeSeries, dt)
 	
 	-- apply newton solver
+	assTuner:set_matrix_structure_is_const(time > 0.0)
+	if gmg ~= nil then
+		gmg:set_matrix_structure_is_const(time > 0.0)
+	end
 	if newtonSolver:apply(u) == false
 	then
 		-- in case of failure:
